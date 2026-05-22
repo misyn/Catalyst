@@ -1,2 +1,0 @@
-# Catalyst
-Catalyst UI
