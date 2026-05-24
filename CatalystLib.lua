@@ -1,5 +1,5 @@
 local _Catalyst = {}
-_Catalyst.Version = "2.6"
+_Catalyst.Version = "2.7"
 _Catalyst.RainbowColorValue = 0
 _Catalyst.HueSelectionPosition = 0
 _Catalyst.Flags = {}
@@ -1751,7 +1751,7 @@ function _Catalyst:Window(opt)
     tabLayout.Parent = tabScroll
     pad(tabScroll, 6)
 
-    local tabs = {}
+
 
     local function refreshTabList()
         local horiz = (panels.Tabs.edge == "Top" or panels.Tabs.edge == "Bottom")
@@ -2177,10 +2177,11 @@ function _Catalyst:Window(opt)
         wmImage.BackgroundColor3 = Theme.Element
     end)
 
-    local function applyWmScale(s)
-        wmScale = s
-        wmUIScale.Scale = s
-    end
+local function applyWmScale(s)
+    wmScale = s
+    wmUIScale.Scale = s
+    _Catalyst.Flags["_wmscale"] = s
+end
 
     local function setWatermarkName(t)
         if t and t ~= "" then
@@ -2249,6 +2250,7 @@ function _Catalyst:Window(opt)
     end)
 
     local firstTab = true
+        local tabs = {}
     function Window:Tab(name, icon)
         local container = Instance.new("ScrollingFrame")
         container.Size = UDim2.new(1, 0, 1, 0)
@@ -2457,19 +2459,40 @@ function _Catalyst:Window(opt)
         return out
     end
 
-    local function applyAllVisuals()
-        if _Catalyst._customAccent then
-            setAccent(Theme.Accent)
-        else
-            local tn = _Catalyst.Flags["_theme"]
-            local tt = Themes[tn] or Theme
-            setAccent(tt.Accent or Theme.Accent)
-        end
-        for _, fn in ipairs(ThemeListeners) do
-            pcall(fn, Theme)
-        end
-        relayout(true)
+local function applyAllVisuals()
+    -- Apply accent first
+    if _Catalyst._customAccent then
+        setAccent(Theme.Accent)
+    else
+        local tn = _Catalyst.Flags["_theme"]
+        local tt = Themes[tn] or Theme
+        setAccent(tt.Accent or Theme.Accent)
     end
+    
+    -- Force all accent-dependent elements to refresh
+    for _, fn in ipairs(AccentListeners) do
+        pcall(fn, Theme.Accent)
+    end
+    
+    -- Force all theme-dependent elements to refresh
+    for _, fn in ipairs(ThemeListeners) do
+        pcall(fn, Theme)
+    end
+    
+    -- Refresh tab visuals explicitly
+    for _, t in ipairs(tabs) do
+        local isActive = t.container.Visible
+        t.btn.BackgroundColor3 = Theme.Element
+        t.lbl.TextColor3 = isActive and Theme.Text or Theme.SubText
+        t.indicator.BackgroundColor3 = Theme.Accent
+        t.indicator.BackgroundTransparency = isActive and 0 or 1
+        if t.icon then
+            t.icon.ImageColor3 = isActive and Theme.Accent or Theme.SubText
+        end
+    end
+    
+    relayout(true)
+end
 
     function Window:SaveConfig(name)
         if not name or name == "" then return false end
@@ -2646,41 +2669,42 @@ function _Catalyst:Window(opt)
         applyWmScale(v / 100)
     end, "_wmscale", { Suffix = " %" })
 
-    do
-        _Catalyst.Config["_wmpos"] = {
-            Get = function()
-                return {
-                    sx = wmFrame.Position.X.Scale,
-                    ox = wmFrame.Position.X.Offset,
-                    sy = wmFrame.Position.Y.Scale,
-                    oy = wmFrame.Position.Y.Offset,
-                }
-            end,
-            Set = function(v)
-                if type(v) == "table" and v.sx ~= nil then
-                    wmFrame.Position = UDim2.new(v.sx, v.ox, v.sy, v.oy)
-                end
-            end,
-            Default = {
-                sx = WM_DEFAULT_POS.X.Scale,
-                ox = WM_DEFAULT_POS.X.Offset,
-                sy = WM_DEFAULT_POS.Y.Scale,
-                oy = WM_DEFAULT_POS.Y.Offset,
-            },
-        }
-        _Catalyst.Flags["_wmpos"] = _Catalyst.Config["_wmpos"].Default
-    end
+do
+    _Catalyst.Config["_wmpos"] = {
+        Get = function()
+            return {
+                sx = wmFrame.Position.X.Scale,
+                ox = wmFrame.Position.X.Offset,
+                sy = wmFrame.Position.Y.Scale,
+                oy = wmFrame.Position.Y.Offset,
+            }
+        end,
+        Set = function(v)
+            if type(v) == "table" and v.sx ~= nil then
+                wmFrame.Position = UDim2.new(v.sx, v.ox, v.sy, v.oy)
+            end
+        end,
+        Default = {
+            sx = WM_DEFAULT_POS.X.Scale,
+            ox = WM_DEFAULT_POS.X.Offset,
+            sy = WM_DEFAULT_POS.Y.Scale,
+            oy = WM_DEFAULT_POS.Y.Offset,
+        },
+    }
+    _Catalyst.Flags["_wmpos"] = _Catalyst.Config["_wmpos"].Default
 
-    sApi:Button("Save Watermark Position", "Store the current watermark position", function()
-        local pos = {
-            sx = wmFrame.Position.X.Scale,
-            ox = wmFrame.Position.X.Offset,
-            sy = wmFrame.Position.Y.Scale,
-            oy = wmFrame.Position.Y.Offset,
-        }
-        _Catalyst.Flags["_wmpos"] = pos
-        Window:Notify("Watermark", "Position saved.")
-    end)
+    _Catalyst.Config["_wmscale"] = {
+        Get = function() return wmScale end,
+        Set = function(v)
+            if type(v) == "number" then
+                applyWmScale(v)
+            end
+        end,
+        Default = WM_DEFAULT_SCALE,
+    }
+    _Catalyst.Flags["_wmscale"] = WM_DEFAULT_SCALE
+end
+
     sApi:Button("Reset Watermark Position", "Move watermark back to default position", function()
         wmFrame.Position = WM_DEFAULT_POS
         _Catalyst.Flags["_wmpos"] = _Catalyst.Config["_wmpos"].Default
