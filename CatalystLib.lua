@@ -1,5 +1,5 @@
 local _Catalyst = {}
-_Catalyst.Version = "GX 2.2"
+_Catalyst.Version = "GX 2.3"
 _Catalyst.RainbowColorValue = 0
 _Catalyst.HueSelectionPosition = 0
 _Catalyst.Flags = {}
@@ -41,6 +41,43 @@ local Theme = {
     Accent  = Color3.fromRGB(255, 42, 74),
 }
 _Catalyst.Theme = Theme
+
+local Themes = {
+    GX = {
+        Window  = Color3.fromRGB(18, 18, 21),
+        Panel   = Color3.fromRGB(24, 24, 28),
+        Header  = Color3.fromRGB(31, 31, 37),
+        Element = Color3.fromRGB(35, 35, 41),
+        Hover   = Color3.fromRGB(46, 46, 54),
+        Stroke  = Color3.fromRGB(50, 50, 60),
+        Text    = Color3.fromRGB(237, 237, 243),
+        SubText = Color3.fromRGB(140, 140, 152),
+        Accent  = Color3.fromRGB(255, 42, 74),
+    },
+    Discord = {
+        Window  = Color3.fromRGB(30, 31, 34),
+        Panel   = Color3.fromRGB(43, 45, 49),
+        Header  = Color3.fromRGB(49, 51, 56),
+        Element = Color3.fromRGB(56, 58, 64),
+        Hover   = Color3.fromRGB(66, 70, 78),
+        Stroke  = Color3.fromRGB(38, 39, 43),
+        Text    = Color3.fromRGB(219, 222, 225),
+        SubText = Color3.fromRGB(148, 155, 164),
+        Accent  = Color3.fromRGB(88, 101, 242),
+    },
+    Light = {
+        Window  = Color3.fromRGB(240, 241, 245),
+        Panel   = Color3.fromRGB(252, 252, 255),
+        Header  = Color3.fromRGB(232, 233, 238),
+        Element = Color3.fromRGB(246, 247, 250),
+        Hover   = Color3.fromRGB(228, 229, 235),
+        Stroke  = Color3.fromRGB(214, 216, 223),
+        Text    = Color3.fromRGB(32, 33, 38),
+        SubText = Color3.fromRGB(120, 122, 134),
+        Accent  = Color3.fromRGB(59, 130, 246),
+    },
+}
+_Catalyst.Themes = Themes
 
 local AccentObjects   = {}
 local AccentListeners = {}
@@ -222,6 +259,50 @@ if not ScreenGui.Parent then
     ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 end
 
+local function applyTheme(name)
+    local t = Themes[name]
+    if not t then return end
+    local map = {}
+    for k, v in pairs(t) do
+        if k ~= "Accent" and Theme[k] then
+            map[#map + 1] = { from = Theme[k], to = v }
+        end
+    end
+    for k, v in pairs(t) do
+        if k ~= "Accent" then Theme[k] = v end
+    end
+    local function conv(c)
+        for _, m in ipairs(map) do
+            if c == m.from then return m.to end
+        end
+        return nil
+    end
+    for _, obj in ipairs(ScreenGui:GetDescendants()) do
+        if obj:IsA("GuiObject") then
+            local nb = conv(obj.BackgroundColor3)
+            if nb then obj.BackgroundColor3 = nb end
+        end
+        if obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
+            local nt = conv(obj.TextColor3)
+            if nt then obj.TextColor3 = nt end
+            if obj:IsA("TextBox") then
+                local np = conv(obj.PlaceholderColor3)
+                if np then obj.PlaceholderColor3 = np end
+            end
+        end
+        if obj:IsA("ImageLabel") or obj:IsA("ImageButton") then
+            local ni = conv(obj.ImageColor3)
+            if ni then obj.ImageColor3 = ni end
+        end
+        if obj:IsA("UIStroke") then
+            local ns = conv(obj.Color)
+            if ns then obj.Color = ns end
+        end
+    end
+    setAccent(t.Accent)
+end
+_Catalyst.ApplyTheme = applyTheme
+
 taskLib.spawn(function()
     while alive() do
         _Catalyst.RainbowColorValue = (_Catalyst.RainbowColorValue + 1 / 255) % 1
@@ -342,6 +423,8 @@ local function makeAPI(scroll)
 
     function api:Section(text)
         local sec = { members = {}, collapsed = false }
+        _Catalyst.__secCount = (_Catalyst.__secCount or 0) + 1
+        local secFlag = "_sec" .. _Catalyst.__secCount
         local f = Instance.new("Frame")
         f.Size = UDim2.new(1, 0, 0, 28)
         f.BackgroundColor3 = Theme.Panel
@@ -391,15 +474,23 @@ local function makeAPI(scroll)
         btn.Parent = f
 
         local function setCollapsed(v)
-            sec.collapsed = v
+            sec.collapsed = v and true or false
             for _, m in ipairs(sec.members) do
-                if m and m.Parent then m.Visible = not v end
+                if m and m.Parent then m.Visible = not sec.collapsed end
             end
-            tween(chev, 0.2, { Rotation = v and 0 or 90 })
+            tween(chev, 0.2, { Rotation = sec.collapsed and 0 or 90 })
+            _Catalyst.Flags[secFlag] = sec.collapsed
         end
         btn.MouseButton1Click:Connect(function()
             setCollapsed(not sec.collapsed)
         end)
+
+        _Catalyst.Config[secFlag] = {
+            Get = function() return sec.collapsed end,
+            Set = function(v) setCollapsed(v and true or false) end,
+            Default = false,
+        }
+        _Catalyst.Flags[secFlag] = false
 
         currentSection = sec
         return {
@@ -1009,7 +1100,7 @@ local function makeAPI(scroll)
         box.BorderSizePixel = 0
         box.Parent = card
         corner(box, 4)
-        stroke(box, Theme.Stroke, 1, 0)
+        local boxStroke = stroke(box, Theme.Stroke, 1, 0)
         local keyLbl = Instance.new("TextLabel")
         keyLbl.BackgroundTransparency = 1
         keyLbl.Size = UDim2.new(1, -8, 1, 0)
@@ -1021,11 +1112,25 @@ local function makeAPI(scroll)
         keyLbl.TextTruncate = Enum.TextTruncate.AtEnd
         keyLbl.Parent = box
 
+        local active = false
+        local function bindFlashOn()
+            active = true
+            tween(box, 0.12, { BackgroundColor3 = Theme.Accent })
+            boxStroke.Color = Theme.Accent
+            keyLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+        end
+        local function bindFlashOff()
+            active = false
+            tween(box, 0.18, { BackgroundColor3 = Theme.Panel })
+            boxStroke.Color = Theme.Stroke
+            keyLbl.TextColor3 = Theme.SubText
+        end
+
         local listening = false
         local function setKey(k)
             key = keyName(k)
             keyLbl.Text = key
-            keyLbl.TextColor3 = Theme.SubText
+            if not active then keyLbl.TextColor3 = Theme.SubText end
             if flag then _Catalyst.Flags[flag] = key end
         end
 
@@ -1049,11 +1154,18 @@ local function makeAPI(scroll)
             if gpe or listening then return end
             if i.KeyCode ~= Enum.KeyCode.Unknown and i.KeyCode.Name == key then
                 if mode == "Hold" then
+                    bindFlashOn()
                     pcall(callback, true)
                 elseif mode == "Toggle" then
                     bstate = not bstate
+                    if bstate then bindFlashOn() else bindFlashOff() end
                     pcall(callback, bstate)
                 else
+                    bindFlashOn()
+                    taskLib.spawn(function()
+                        taskLib.wait(0.16)
+                        bindFlashOff()
+                    end)
                     pcall(callback)
                 end
             end
@@ -1062,6 +1174,7 @@ local function makeAPI(scroll)
             UserInputService.InputEnded:Connect(function(i)
                 if not alive() then return end
                 if i.KeyCode ~= Enum.KeyCode.Unknown and i.KeyCode.Name == key then
+                    bindFlashOff()
                     pcall(callback, false)
                 end
             end)
@@ -1144,6 +1257,7 @@ function _Catalyst:Window(opt)
     local ConfigFolder = opt.ConfigFolder or "_CatalystConfigs"
     local ToggleKey    = opt.ToggleKey or opt.CloseBind or Enum.KeyCode.RightAlt
     if opt.Accent then setAccent(opt.Accent) end
+    if opt.Theme and Themes[opt.Theme] then applyTheme(opt.Theme) end
     FileSystem.makeFolder(ConfigFolder)
 
     local WIN_W, WIN_H = 880, 540
@@ -1162,6 +1276,7 @@ function _Catalyst:Window(opt)
     MainFrame.Size = UDim2.fromOffset(WIN_W, WIN_H)
     MainFrame.BackgroundColor3 = Theme.Window
     MainFrame.BorderSizePixel = 0
+    MainFrame.Active = true
     MainFrame.Parent = ScreenGui
     corner(MainFrame, 10)
     stroke(MainFrame, Theme.Stroke, 1, 0.2)
@@ -1213,6 +1328,7 @@ function _Catalyst:Window(opt)
         f.BackgroundColor3 = Theme.Panel
         f.BorderSizePixel = 0
         f.ClipsDescendants = true
+        f.Active = true
         f.Parent = MainFrame
         corner(f, 8)
         stroke(f, Theme.Stroke, 1, 0.35)
@@ -1221,6 +1337,7 @@ function _Catalyst:Window(opt)
         header.Size = UDim2.new(1, 0, 0, 32)
         header.BackgroundColor3 = Theme.Header
         header.BorderSizePixel = 0
+        header.Active = true
         header.Parent = f
 
         local accentLine = Instance.new("Frame")
@@ -1284,6 +1401,15 @@ function _Catalyst:Window(opt)
         Tabs     = { panel = tabsPanel,     edge = "Left",  order = 1 },
         Settings = { panel = settingsPanel, edge = "Right", order = 1 },
     }
+
+    local function getLayout()
+        return {
+            tabsEdge      = panels.Tabs.edge,
+            tabsOrder     = panels.Tabs.order,
+            settingsEdge  = panels.Settings.edge,
+            settingsOrder = panels.Settings.order,
+        }
+    end
 
     local tabScroll = Instance.new("ScrollingFrame")
     tabScroll.Size = UDim2.new(1, 0, 1, 0)
@@ -1387,26 +1513,43 @@ function _Catalyst:Window(opt)
         refreshTabList()
     end
 
+    local function applyLayout(L)
+        if type(L) ~= "table" then return end
+        if L.tabsEdge      then panels.Tabs.edge      = L.tabsEdge end
+        if L.tabsOrder     then panels.Tabs.order     = L.tabsOrder end
+        if L.settingsEdge  then panels.Settings.edge  = L.settingsEdge end
+        if L.settingsOrder then panels.Settings.order = L.settingsOrder end
+        relayout(true)
+        _Catalyst.Flags["_layout"] = getLayout()
+    end
+    _Catalyst.Config["_layout"] = {
+        Get = function() return getLayout() end,
+        Set = function(v) applyLayout(v) end,
+        Default = getLayout(),
+    }
+    _Catalyst.Flags["_layout"] = getLayout()
+
     local function makeZone()
         local z = Instance.new("Frame")
-        z.BackgroundTransparency = 0.55
+        z.BackgroundColor3 = Theme.Header
+        z.BackgroundTransparency = 0
         z.BorderSizePixel = 0
         z.Visible = false
         z.ZIndex = 30
         z.Parent = MainFrame
         corner(z, 8)
-        regAccent(z, "BackgroundColor3")
-        local s = stroke(z, Theme.Accent, 2, 0.1)
+        local s = stroke(z, Theme.Accent, 2, 0)
         regAccent(s, "Color")
         local lbl = Instance.new("TextLabel")
         lbl.BackgroundTransparency = 1
         lbl.Size = UDim2.new(1, 0, 1, 0)
         lbl.Font = Enum.Font.GothamBold
         lbl.Text = "DOCK HERE"
-        lbl.TextColor3 = Theme.Text
+        lbl.TextColor3 = Theme.Accent
         lbl.TextSize = 14
         lbl.ZIndex = 31
         lbl.Parent = z
+        regAccent(lbl, "TextColor3")
         return z
     end
     local zones = { Left = makeZone(), Right = makeZone(), Top = makeZone(), Bottom = makeZone() }
@@ -1438,6 +1581,46 @@ function _Catalyst:Window(opt)
         end
         local axisVal = (best == "Left" or best == "Right") and ry or rx
         return best, axisVal
+    end
+
+    local function cursorOverPanels(pos)
+        local list = { tabsPanel.frame, contentPanel.frame, settingsPanel.frame }
+        for _, f in ipairs(list) do
+            local ap, as = f.AbsolutePosition, f.AbsoluteSize
+            if pos.X >= ap.X and pos.X <= ap.X + as.X
+            and pos.Y >= ap.Y and pos.Y <= ap.Y + as.Y then
+                return true
+            end
+        end
+        return false
+    end
+
+    do
+        local dragging, startInput, startPos = false, nil, nil
+        MainFrame.InputBegan:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.MouseButton1
+            or i.UserInputType == Enum.UserInputType.Touch then
+                if cursorOverPanels(i.Position) then return end
+                dragging, startInput, startPos = true, i.Position, MainFrame.Position
+            end
+        end)
+        MainFrame.InputEnded:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.MouseButton1
+            or i.UserInputType == Enum.UserInputType.Touch then
+                dragging = false
+            end
+        end)
+        UserInputService.InputChanged:Connect(function(i)
+            if not alive() then return end
+            if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement
+            or i.UserInputType == Enum.UserInputType.Touch) then
+                local delta = i.Position - startInput
+                MainFrame.Position = UDim2.new(
+                    startPos.X.Scale, snap(startPos.X.Offset + delta.X),
+                    startPos.Y.Scale, snap(startPos.Y.Offset + delta.Y)
+                )
+            end
+        end)
     end
 
     do
@@ -1500,6 +1683,7 @@ function _Catalyst:Window(opt)
                     pData.order = 1
                 end
                 relayout(true)
+                _Catalyst.Flags["_layout"] = getLayout()
             end
         end)
         UserInputService.InputChanged:Connect(function(i)
@@ -1730,9 +1914,17 @@ function _Catalyst:Window(opt)
         if not raw then return false end
         local ok, data = pcall(function() return HttpService:JSONDecode(raw) end)
         if not ok or type(data) ~= "table" then return false end
+        if data["_theme"] ~= nil and _Catalyst.Config["_theme"] then
+            pcall(_Catalyst.Config["_theme"].Set, deserialize(data["_theme"]))
+        end
         for flag, val in pairs(data) do
-            local c = _Catalyst.Config[flag]
-            if c then pcall(c.Set, deserialize(val)) end
+            if flag ~= "_theme" and flag ~= "_accent" then
+                local c = _Catalyst.Config[flag]
+                if c then pcall(c.Set, deserialize(val)) end
+            end
+        end
+        if data["_accent"] ~= nil and _Catalyst.Config["_accent"] then
+            pcall(_Catalyst.Config["_accent"].Set, deserialize(data["_accent"]))
         end
         writeMeta({ recent = name })
         return true
@@ -1807,7 +1999,14 @@ function _Catalyst:Window(opt)
     end)
 
     sApi:Section("Appearance")
-    sApi:Colorpicker("Accent Color", Theme.Accent, function(c)
+    local accentPicker
+    sApi:Dropdown("UI Theme", { "GX", "Discord", "Light" }, function(v)
+        applyTheme(v)
+        if accentPicker and accentPicker.Set then
+            accentPicker.Set(Theme.Accent)
+        end
+    end, "_theme", "GX")
+    accentPicker = sApi:Colorpicker("Accent Color", Theme.Accent, function(c)
         setAccent(c)
     end, "_accent")
     sApi:Slider("UI Scale", "Resize the whole interface", 50, 150, 100, function(v)
@@ -1890,6 +2089,7 @@ function _Catalyst:Window(opt)
     end)
 
     Window.SetAccent = setAccent
+    Window.SetTheme  = applyTheme
     Window.Toggle    = toggleUI
     Window.Relayout  = function() relayout(true) end
 
