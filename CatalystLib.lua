@@ -1,5 +1,5 @@
 local _Catalyst = {}
-_Catalyst.Version = "2.5"
+_Catalyst.Version = "2.6"
 _Catalyst.RainbowColorValue = 0
 _Catalyst.HueSelectionPosition = 0
 _Catalyst.Flags = {}
@@ -463,6 +463,7 @@ local function makeAPI(scroll)
         bar.Size = UDim2.new(0, 3, 0, 14)
         bar.Position = UDim2.new(0, 8, 0.5, -7)
         bar.BorderSizePixel = 0
+        bar.BackgroundColor3 = Theme.Accent
         bar.Parent = f
         corner(bar, 2)
         regAccent(bar, "BackgroundColor3")
@@ -616,12 +617,6 @@ local function makeAPI(scroll)
 
         local state = default and true or false
 
-        local function refreshVisual()
-            pill.BackgroundColor3 = state and Theme.Accent or Theme.Stroke
-            knob.BackgroundColor3 = Theme.Text
-            knob.Position = UDim2.new(state and 1 or 0, state and -18 or 2, 0.5, 0)
-        end
-
         local function apply(v, fire)
             state = v and true or false
             tween(knob, 0.18, { Position = UDim2.new(state and 1 or 0, state and -18 or 2, 0.5, 0) })
@@ -632,11 +627,7 @@ local function makeAPI(scroll)
         end
 
         onAccent(function(c)
-            if state then
-                pill.BackgroundColor3 = c
-            else
-                pill.BackgroundColor3 = Theme.Stroke
-            end
+            pill.BackgroundColor3 = state and c or Theme.Stroke
             knob.BackgroundColor3 = Theme.Text
         end)
 
@@ -721,12 +712,11 @@ local function makeAPI(scroll)
         end
 
         apply(state, false)
-        refreshVisual()
         if flag then
             _Catalyst.Config[flag] = {
                 Get     = function() return state end,
                 Set     = function(v) apply(v, true) end,
-                Default = state,
+                Default = default and true or false,
             }
             _Catalyst.Flags[flag] = state
         end
@@ -783,6 +773,7 @@ local function makeAPI(scroll)
 
         local fill = Instance.new("Frame")
         fill.Size = UDim2.new(0, 0, 1, 0)
+        fill.BackgroundColor3 = Theme.Accent
         fill.BorderSizePixel = 0
         fill.Parent = track
         corner(fill, 3)
@@ -1625,6 +1616,9 @@ function _Catalyst:Window(opt)
         end)
     end
 
+    local streamerMode = false
+    local wmVisible = true
+
     local toggleBusy = false
     local function toggleUI()
         if not MainFrame.Parent then return end
@@ -1635,12 +1629,22 @@ function _Catalyst:Window(opt)
             MainFrame.Visible = true
             local tw = tween(uiScale, 0.26, { Scale = targetScale() }, Enum.EasingStyle.Quart)
             tw.Completed:Connect(function() toggleBusy = false end)
+            if wmVisible and not streamerMode then
+            end
         else
             local tw = tween(uiScale, 0.24, { Scale = 0 }, Enum.EasingStyle.Quart)
             tw.Completed:Connect(function()
                 if not isOpen then MainFrame.Visible = false end
                 toggleBusy = false
             end)
+        end
+        if wmVisible then
+            if streamerMode then
+                local wmFrame = ScreenGui:FindFirstChild("_CatalystWatermark")
+                if wmFrame then
+                    wmFrame.Visible = isOpen
+                end
+            end
         end
     end
 
@@ -1664,6 +1668,7 @@ function _Catalyst:Window(opt)
         local accentLine = Instance.new("Frame")
         accentLine.Size = UDim2.new(1, 0, 0, 2)
         accentLine.BorderSizePixel = 0
+        accentLine.BackgroundColor3 = Theme.Accent
         accentLine.Parent = header
         regAccent(accentLine, "BackgroundColor3")
 
@@ -2101,11 +2106,17 @@ function _Catalyst:Window(opt)
         return tostring(id or "unknown")
     end
 
+    local WM_DEFAULT_POS = UDim2.new(0, 14, 1, -68)
+    local WM_DEFAULT_SCALE = 1
+
+    local wmScale = WM_DEFAULT_SCALE
+    local wmBaseW, wmBaseH = 300, 54
+
     local wmFrame = Instance.new("Frame")
     wmFrame.Name = "_CatalystWatermark"
-    wmFrame.AnchorPoint = Vector2.new(0, 1)
-    wmFrame.Size = UDim2.new(0, 300, 0, 54)
-    wmFrame.Position = UDim2.new(0, 14, 1, -14)
+    wmFrame.AnchorPoint = Vector2.new(0, 0)
+    wmFrame.Size = UDim2.fromOffset(wmBaseW, wmBaseH)
+    wmFrame.Position = WM_DEFAULT_POS
     wmFrame.BackgroundColor3 = Theme.Panel
     wmFrame.BorderSizePixel = 0
     wmFrame.Active = true
@@ -2114,6 +2125,10 @@ function _Catalyst:Window(opt)
     wmFrame.Parent = ScreenGui
     corner(wmFrame, 8)
     local wmStroke = stroke(wmFrame, Theme.Stroke, 1, 0.4)
+
+    local wmUIScale = Instance.new("UIScale")
+    wmUIScale.Scale = wmScale
+    wmUIScale.Parent = wmFrame
 
     local wmImage = Instance.new("ImageLabel")
     wmImage.AnchorPoint = Vector2.new(0, 0.5)
@@ -2131,12 +2146,12 @@ function _Catalyst:Window(opt)
 
     local wmLabel = Instance.new("TextLabel")
     wmLabel.BackgroundTransparency = 1
-    wmLabel.Position = UDim2.new(0, 54, 0, 8)
+    wmLabel.Position = UDim2.new(0, 54, 0, 7)
     wmLabel.Size = UDim2.new(1, -62, 0, 18)
     wmLabel.Font = Enum.Font.GothamBold
     wmLabel.Text = PLAYER_NAME
     wmLabel.TextColor3 = Theme.Text
-    wmLabel.TextSize = 14
+    wmLabel.TextSize = 13
     wmLabel.TextXAlignment = Enum.TextXAlignment.Left
     wmLabel.TextTruncate = Enum.TextTruncate.AtEnd
     wmLabel.ZIndex = 101
@@ -2149,7 +2164,7 @@ function _Catalyst:Window(opt)
     wmSub.Font = Enum.Font.Gotham
     wmSub.Text = ""
     wmSub.TextColor3 = Theme.SubText
-    wmSub.TextSize = 11
+    wmSub.TextSize = 10
     wmSub.TextXAlignment = Enum.TextXAlignment.Left
     wmSub.TextTruncate = Enum.TextTruncate.AtEnd
     wmSub.ZIndex = 101
@@ -2162,6 +2177,11 @@ function _Catalyst:Window(opt)
         wmImage.BackgroundColor3 = Theme.Element
     end)
 
+    local function applyWmScale(s)
+        wmScale = s
+        wmUIScale.Scale = s
+    end
+
     local function setWatermarkName(t)
         if t and t ~= "" then
             wmLabel.Text = t
@@ -2171,6 +2191,18 @@ function _Catalyst:Window(opt)
     end
     local function setWatermarkImage(t)
         wmImage.Image = resolveImage(t)
+    end
+    local function setWatermarkVisible(v)
+        wmVisible = v and true or false
+        if not wmVisible then
+            wmFrame.Visible = false
+        else
+            if streamerMode then
+                wmFrame.Visible = isOpen
+            else
+                wmFrame.Visible = true
+            end
+        end
     end
 
     local wmDragging, wmStartInput, wmStartPos = false, nil, nil
@@ -2197,6 +2229,12 @@ function _Catalyst:Window(opt)
                 wmStartPos.X.Scale, wmStartPos.X.Offset + delta.X,
                 wmStartPos.Y.Scale, wmStartPos.Y.Offset + delta.Y
             )
+            _Catalyst.Flags["_wmpos"] = {
+                sx = wmFrame.Position.X.Scale,
+                ox = wmFrame.Position.X.Offset,
+                sy = wmFrame.Position.Y.Scale,
+                oy = wmFrame.Position.Y.Offset,
+            }
         end
     end)
 
@@ -2238,6 +2276,7 @@ function _Catalyst:Window(opt)
         indicator.Position = UDim2.new(0, 0, 0, 6)
         indicator.BorderSizePixel = 0
         indicator.BackgroundTransparency = 1
+        indicator.BackgroundColor3 = Theme.Accent
         indicator.Parent = btn
         corner(indicator, 2)
         regAccent(indicator, "BackgroundColor3")
@@ -2284,15 +2323,21 @@ function _Catalyst:Window(opt)
         entry.activate = activate
         onAccent(function(c)
             if ic and container.Visible then ic.ImageColor3 = c end
+            if container.Visible then
+                indicator.BackgroundColor3 = c
+            end
         end)
         onTheme(function()
             btn.BackgroundColor3 = Theme.Element
             if container.Visible then
                 lbl.TextColor3 = Theme.Text
                 if ic then ic.ImageColor3 = Theme.Accent end
+                indicator.BackgroundColor3 = Theme.Accent
+                indicator.BackgroundTransparency = 0
             else
                 lbl.TextColor3 = Theme.SubText
                 if ic then ic.ImageColor3 = Theme.SubText end
+                indicator.BackgroundTransparency = 1
             end
         end)
         btn.MouseButton1Click:Connect(activate)
@@ -2338,6 +2383,7 @@ function _Catalyst:Window(opt)
         bar.Position = UDim2.new(0, 6, 0, 6)
         bar.BorderSizePixel = 0
         bar.BackgroundTransparency = 1
+        bar.BackgroundColor3 = Theme.Accent
         bar.Parent = card
         corner(bar, 2)
         regAccent(bar, "BackgroundColor3")
@@ -2458,6 +2504,7 @@ function _Catalyst:Window(opt)
             end
         end
         if data["_accent"] ~= nil and _Catalyst.Config["_accent"] then
+            _Catalyst._customAccent = true
             pcall(_Catalyst.Config["_accent"].Set, deserialize(data["_accent"]))
         end
         writeMeta({ recent = name })
@@ -2576,12 +2623,69 @@ function _Catalyst:Window(opt)
     end, "_togglekey")
 
     sApi:Section("Watermark")
+    sApi:Toggle("Show Watermark", "Display the watermark overlay", true, function(on)
+        setWatermarkVisible(on)
+    end, "_wmshow")
+    sApi:Toggle("Streamer Mode", "Hide watermark when UI is closed", false, function(on)
+        streamerMode = on
+        if wmVisible then
+            if streamerMode then
+                wmFrame.Visible = isOpen
+            else
+                wmFrame.Visible = true
+            end
+        end
+    end, "_streamermode")
     sApi:Textbox("Display Name", "Custom name shown on the watermark", false, function(t)
         setWatermarkName(t)
     end, "_wmname")
     sApi:Textbox("Avatar Image", "rbxassetid number or asset url", false, function(t)
         setWatermarkImage(t)
     end, "_wmimage")
+    sApi:Slider("Watermark Scale", "Resize the watermark", 50, 200, 100, function(v)
+        applyWmScale(v / 100)
+    end, "_wmscale", { Suffix = " %" })
+
+    do
+        _Catalyst.Config["_wmpos"] = {
+            Get = function()
+                return {
+                    sx = wmFrame.Position.X.Scale,
+                    ox = wmFrame.Position.X.Offset,
+                    sy = wmFrame.Position.Y.Scale,
+                    oy = wmFrame.Position.Y.Offset,
+                }
+            end,
+            Set = function(v)
+                if type(v) == "table" and v.sx ~= nil then
+                    wmFrame.Position = UDim2.new(v.sx, v.ox, v.sy, v.oy)
+                end
+            end,
+            Default = {
+                sx = WM_DEFAULT_POS.X.Scale,
+                ox = WM_DEFAULT_POS.X.Offset,
+                sy = WM_DEFAULT_POS.Y.Scale,
+                oy = WM_DEFAULT_POS.Y.Offset,
+            },
+        }
+        _Catalyst.Flags["_wmpos"] = _Catalyst.Config["_wmpos"].Default
+    end
+
+    sApi:Button("Save Watermark Position", "Store the current watermark position", function()
+        local pos = {
+            sx = wmFrame.Position.X.Scale,
+            ox = wmFrame.Position.X.Offset,
+            sy = wmFrame.Position.Y.Scale,
+            oy = wmFrame.Position.Y.Offset,
+        }
+        _Catalyst.Flags["_wmpos"] = pos
+        Window:Notify("Watermark", "Position saved.")
+    end)
+    sApi:Button("Reset Watermark Position", "Move watermark back to default position", function()
+        wmFrame.Position = WM_DEFAULT_POS
+        _Catalyst.Flags["_wmpos"] = _Catalyst.Config["_wmpos"].Default
+        Window:Notify("Watermark", "Position reset.")
+    end)
 
     sApi:Section("About")
     sApi:Label("_Catalyst " .. _Catalyst.Version)
@@ -2655,13 +2759,14 @@ function _Catalyst:Window(opt)
         if alive() and not didInit then Window:Init() end
     end)
 
-    Window.SetAccent       = setAccent
-    Window.SetTheme        = applyTheme
-    Window.Toggle          = toggleUI
-    Window.Relayout        = function() relayout(true) end
+    Window.SetAccent         = setAccent
+    Window.SetTheme          = applyTheme
+    Window.Toggle            = toggleUI
+    Window.Relayout          = function() relayout(true) end
     Window.SetWatermarkName  = setWatermarkName
     Window.SetWatermarkImage = setWatermarkImage
-    Window.RefreshVisuals  = function() applyAllVisuals() end
+    Window.SetWatermarkVisible = setWatermarkVisible
+    Window.RefreshVisuals    = function() applyAllVisuals() end
 
     relayout(false)
     computeFit()
