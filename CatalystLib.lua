@@ -4,6 +4,7 @@ _Catalyst.RainbowColorValue = 0
 _Catalyst.HueSelectionPosition = 0
 _Catalyst.Flags = {}
 _Catalyst.Config = {}
+_Catalyst._customAccent = false
 
 local Players          = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -299,7 +300,9 @@ local function applyTheme(name)
             if ns then obj.Color = ns end
         end
     end
-    setAccent(t.Accent)
+    if not _Catalyst._customAccent then
+        setAccent(t.Accent)
+    end
 end
 _Catalyst.ApplyTheme = applyTheme
 
@@ -1005,7 +1008,7 @@ local function makeAPI(scroll)
         local function sizeCard()
             card.Size = UDim2.new(1, 0, 0, open and 204 or 38)
         end
-        local function apply(fire)
+        local function applyColor(fire)
             local col = Color3.fromHSV(h, s, v)
             swatch.BackgroundColor3 = col
             box.BackgroundColor3 = Color3.fromHSV(h, 1, 1)
@@ -1024,13 +1027,13 @@ local function makeAPI(scroll)
             local x = math.clamp((posV.X - box.AbsolutePosition.X) / math.max(box.AbsoluteSize.X, 1), 0, 1)
             local y = math.clamp((posV.Y - box.AbsolutePosition.Y) / math.max(box.AbsoluteSize.Y, 1), 0, 1)
             s, v = x, 1 - y
-            apply(true)
+            applyColor(true)
         end)
         bindDrag(hue, function(posV)
             if rainbow then return end
             local x = math.clamp((posV.X - hue.AbsolutePosition.X) / math.max(hue.AbsoluteSize.X, 1), 0, 1)
             h = x
-            apply(true)
+            applyColor(true)
         end)
 
         rbRow.MouseButton1Click:Connect(function()
@@ -1041,7 +1044,7 @@ local function makeAPI(scroll)
                 taskLib.spawn(function()
                     while rainbow and alive() do
                         h, s, v = _Catalyst.RainbowColorValue, 1, 1
-                        apply(true)
+                        applyColor(true)
                         taskLib.wait()
                     end
                 end)
@@ -1053,11 +1056,11 @@ local function makeAPI(scroll)
             sizeCard()
         end)
 
-        apply(false)
+        applyColor(false)
         if flag then
             _Catalyst.Config[flag] = {
                 Get = function() return Color3.fromHSV(h, s, v) end,
-                Set = function(c) h, s, v = Color3.toHSV(c) apply(true) end,
+                Set = function(c) h, s, v = Color3.toHSV(c) applyColor(true) end,
                 Default = default,
             }
             _Catalyst.Flags[flag] = default
@@ -1065,7 +1068,7 @@ local function makeAPI(scroll)
         pcall(callback, default)
         return {
             Get = function() return Color3.fromHSV(h, s, v) end,
-            Set = function(c) h, s, v = Color3.toHSV(c) apply(true) end,
+            Set = function(c) h, s, v = Color3.toHSV(c) applyColor(true) end,
         }
     end
 
@@ -1236,13 +1239,13 @@ local function makeAPI(scroll)
         if flag then
             _Catalyst.Config[flag] = {
                 Get = function() return tb.Text end,
-                Set = function(v) tb.Text = tostring(v) pcall(callback, tb.Text) end,
+                Set = function(vv) tb.Text = tostring(vv) pcall(callback, tb.Text) end,
                 Default = "",
             }
             _Catalyst.Flags[flag] = ""
         end
         return { Get = function() return tb.Text end,
-                 Set = function(v) tb.Text = tostring(v) end }
+                 Set = function(vv) tb.Text = tostring(vv) end }
     end
 
     return api
@@ -1529,10 +1532,98 @@ function _Catalyst:Window(opt)
     }
     _Catalyst.Flags["_layout"] = getLayout()
 
-    local function makeZone()
+    local function computeZoneRects()
+        local byEdge = { Left = {}, Right = {}, Top = {}, Bottom = {} }
+        for _, p in pairs(panels) do table.insert(byEdge[p.edge], p) end
+        for _, arr in pairs(byEdge) do
+            table.sort(arr, function(a, b) return a.order < b.order end)
+        end
+
+        local leftCount   = #byEdge.Left
+        local rightCount  = #byEdge.Right
+        local topCount    = #byEdge.Top
+        local bottomCount = #byEdge.Bottom
+
+        local rect = { x = PAD, y = PAD, w = WIN_W - 2 * PAD, h = WIN_H - 2 * PAD }
+
+        local leftW   = leftCount   > 0 and SIDE_W or 0
+        local rightW  = rightCount  > 0 and SIDE_W or 0
+        local topH    = topCount    > 0 and SIDE_H or 0
+        local bottomH = bottomCount > 0 and SIDE_H or 0
+
+        local innerX = rect.x + (leftW > 0 and leftW + GAP or 0)
+        local innerY = rect.y + (topH  > 0 and topH  + GAP or 0)
+        local innerW = rect.w - (leftW > 0 and leftW + GAP or 0) - (rightW > 0 and rightW + GAP or 0)
+        local innerH = rect.h - (topH  > 0 and topH  + GAP or 0) - (bottomH > 0 and bottomH + GAP or 0)
+
+        local zoneRects = {}
+
+        local function addEdgeZones(edge, count, isVertical)
+            if count == 0 then
+                local zx, zy, zw, zh
+                if edge == "Left" then
+                    zx, zy, zw, zh = rect.x, rect.y, SIDE_W, rect.h
+                elseif edge == "Right" then
+                    zx, zy, zw, zh = rect.x + rect.w - SIDE_W, rect.y, SIDE_W, rect.h
+                elseif edge == "Top" then
+                    zx, zy, zw, zh = innerX, rect.y, innerW, SIDE_H
+                elseif edge == "Bottom" then
+                    zx, zy, zw, zh = innerX, rect.y + rect.h - SIDE_H, innerW, SIDE_H
+                end
+                zoneRects[edge] = { { x = zx, y = zy, w = zw, h = zh, label = "DOCK HERE", order = 1, total = 1 } }
+            else
+                local slots = {}
+                if isVertical then
+                    local zy0 = rect.y
+                    local each = (rect.h - GAP * count) / (count + 1)
+                    for i = 1, count + 1 do
+                        local slotY = zy0 + (i - 1) * (each + GAP)
+                        local zx, zw
+                        if edge == "Left" then
+                            zx, zw = rect.x, SIDE_W
+                        else
+                            zx, zw = rect.x + rect.w - SIDE_W, SIDE_W
+                        end
+                        slots[#slots + 1] = {
+                            x = zx, y = slotY, w = zw, h = each,
+                            label = "DOCK HERE", order = i, total = count + 1
+                        }
+                    end
+                else
+                    local cx0 = innerX
+                    local each = (innerW - GAP * count) / (count + 1)
+                    for i = 1, count + 1 do
+                        local slotX = cx0 + (i - 1) * (each + GAP)
+                        local zy0, zh
+                        if edge == "Top" then
+                            zy0, zh = rect.y, SIDE_H
+                        else
+                            zy0, zh = rect.y + rect.h - SIDE_H, SIDE_H
+                        end
+                        slots[#slots + 1] = {
+                            x = slotX, y = zy0, w = each, h = zh,
+                            label = "DOCK HERE", order = i, total = count + 1
+                        }
+                    end
+                end
+                zoneRects[edge] = slots
+            end
+        end
+
+        addEdgeZones("Left",   leftCount,   true)
+        addEdgeZones("Right",  rightCount,  true)
+        addEdgeZones("Top",    topCount,    false)
+        addEdgeZones("Bottom", bottomCount, false)
+
+        return zoneRects
+    end
+
+    local zoneFrames = {}
+
+    local function makeZoneFrame()
         local z = Instance.new("Frame")
         z.BackgroundColor3 = Theme.Header
-        z.BackgroundTransparency = 0
+        z.BackgroundTransparency = 0.15
         z.BorderSizePixel = 0
         z.Visible = false
         z.ZIndex = 30
@@ -1546,28 +1637,85 @@ function _Catalyst:Window(opt)
         lbl.Font = Enum.Font.GothamBold
         lbl.Text = "DOCK HERE"
         lbl.TextColor3 = Theme.Accent
-        lbl.TextSize = 14
+        lbl.TextSize = 12
         lbl.ZIndex = 31
         lbl.Parent = z
         regAccent(lbl, "TextColor3")
-        return z
+        return { frame = z, label = lbl }
     end
-    local zones = { Left = makeZone(), Right = makeZone(), Top = makeZone(), Bottom = makeZone() }
-    do
-        zones.Left.Position   = UDim2.fromOffset(PAD, PAD)
-        zones.Left.Size       = UDim2.fromOffset(SIDE_W, WIN_H - 2 * PAD)
-        zones.Right.Position  = UDim2.fromOffset(WIN_W - PAD - SIDE_W, PAD)
-        zones.Right.Size      = UDim2.fromOffset(SIDE_W, WIN_H - 2 * PAD)
-        zones.Top.Position    = UDim2.fromOffset(PAD, PAD)
-        zones.Top.Size        = UDim2.fromOffset(WIN_W - 2 * PAD, SIDE_H)
-        zones.Bottom.Position = UDim2.fromOffset(PAD, WIN_H - PAD - SIDE_H)
-        zones.Bottom.Size     = UDim2.fromOffset(WIN_W - 2 * PAD, SIDE_H)
+
+    local function ensureZoneFrames(needed)
+        while #zoneFrames < needed do
+            zoneFrames[#zoneFrames + 1] = makeZoneFrame()
+        end
+        for i = needed + 1, #zoneFrames do
+            zoneFrames[i].frame.Visible = false
+        end
     end
-    local function hideZones()
-        for _, z in pairs(zones) do z.Visible = false end
+
+    local function hideAllZones()
+        for _, zf in ipairs(zoneFrames) do
+            zf.frame.Visible = false
+        end
     end
-    local function showOnlyZone(edge)
-        for e, z in pairs(zones) do z.Visible = (e == edge) end
+
+    local function showZonesForEdge(edge, draggingKey)
+        local tempPanels = {}
+        for k, p in pairs(panels) do
+            if k ~= draggingKey then
+                tempPanels[k] = p
+            end
+        end
+
+        local byEdge = { Left = {}, Right = {}, Top = {}, Bottom = {} }
+        for _, p in pairs(tempPanels) do table.insert(byEdge[p.edge], p) end
+        for _, arr in pairs(byEdge) do
+            table.sort(arr, function(a, b) return a.order < b.order end)
+        end
+
+        local leftCount   = #byEdge.Left
+        local rightCount  = #byEdge.Right
+        local topCount    = #byEdge.Top
+        local bottomCount = #byEdge.Bottom
+
+        local rect = { x = PAD, y = PAD, w = WIN_W - 2 * PAD, h = WIN_H - 2 * PAD }
+
+        local leftW   = leftCount   > 0 and SIDE_W or 0
+        local rightW  = rightCount  > 0 and SIDE_W or 0
+        local topH    = topCount    > 0 and SIDE_H or 0
+        local bottomH = bottomCount > 0 and SIDE_H or 0
+
+        local innerX = rect.x + (leftW > 0 and leftW + GAP or 0)
+        local innerW = rect.w - (leftW > 0 and leftW + GAP or 0) - (rightW > 0 and rightW + GAP or 0)
+
+        local slots = {}
+
+        local isVertical = (edge == "Left" or edge == "Right")
+        local count = byEdge[edge] and #byEdge[edge] or 0
+
+        if isVertical then
+            local each = (rect.h - GAP * count) / (count + 1)
+            for i = 1, count + 1 do
+                local slotY = rect.y + (i - 1) * (each + GAP)
+                local zx = (edge == "Left") and rect.x or (rect.x + rect.w - SIDE_W)
+                slots[#slots + 1] = { x = zx, y = slotY, w = SIDE_W, h = each }
+            end
+        else
+            local each = (innerW - GAP * count) / (count + 1)
+            for i = 1, count + 1 do
+                local slotX = innerX + (i - 1) * (each + GAP)
+                local zy = (edge == "Top") and rect.y or (rect.y + rect.h - SIDE_H)
+                slots[#slots + 1] = { x = slotX, y = zy, w = each, h = SIDE_H }
+            end
+        end
+
+        ensureZoneFrames(#slots)
+        for i, sl in ipairs(slots) do
+            local zf = zoneFrames[i]
+            zf.frame.Position = UDim2.fromOffset(math.floor(sl.x), math.floor(sl.y))
+            zf.frame.Size = UDim2.fromOffset(math.floor(sl.w), math.floor(sl.h))
+            zf.frame.Visible = true
+        end
     end
 
     local function nearestEdge(cursor)
@@ -1655,6 +1803,7 @@ function _Catalyst:Window(opt)
         local handle = pData.panel.header
         local dragging, startInput, startPos = false, nil, nil
         local lastCursor = Vector2.new()
+        local lastEdge = nil
 
         handle.InputBegan:Connect(function(i)
             if i.UserInputType == Enum.UserInputType.MouseButton1
@@ -1663,6 +1812,7 @@ function _Catalyst:Window(opt)
                 startInput = i.Position
                 startPos = pData.panel.frame.Position
                 pData.panel.frame.ZIndex = 20
+                lastEdge = nil
             end
         end)
         handle.InputEnded:Connect(function(i)
@@ -1671,7 +1821,7 @@ function _Catalyst:Window(opt)
             or i.UserInputType == Enum.UserInputType.Touch then
                 dragging = false
                 pData.panel.frame.ZIndex = 1
-                hideZones()
+                hideAllZones()
                 local edge, axisVal = nearestEdge(lastCursor)
                 local other
                 for k, v in pairs(panels) do if k ~= key then other = v end end
@@ -1696,7 +1846,12 @@ function _Catalyst:Window(opt)
                     0, snap(startPos.X.Offset + delta.X),
                     0, snap(startPos.Y.Offset + delta.Y)
                 )
-                showOnlyZone(nearestEdge(lastCursor))
+                local edge = nearestEdge(lastCursor)
+                if edge ~= lastEdge then
+                    lastEdge = edge
+                    hideAllZones()
+                    showZonesForEdge(edge, key)
+                end
             end
         end)
     end
@@ -1953,6 +2108,7 @@ function _Catalyst:Window(opt)
 
     local currentName = ""
     local cfgDrop
+    local accentPicker
 
     sApi:Section("Configuration")
     local nameBox = sApi:Textbox("Config Name", "", false, function(t) currentName = t end)
@@ -1999,16 +2155,25 @@ function _Catalyst:Window(opt)
     end)
 
     sApi:Section("Appearance")
-    local accentPicker
     sApi:Dropdown("UI Theme", { "GX", "Discord", "Light" }, function(v)
+        _Catalyst._customAccent = false
         applyTheme(v)
         if accentPicker and accentPicker.Set then
             accentPicker.Set(Theme.Accent)
         end
     end, "_theme", "GX")
+
     accentPicker = sApi:Colorpicker("Accent Color", Theme.Accent, function(c)
+        _Catalyst._customAccent = true
         setAccent(c)
     end, "_accent")
+
+    local _origAccentSet = _Catalyst.Config["_accent"].Set
+    _Catalyst.Config["_accent"].Set = function(c)
+        _Catalyst._customAccent = true
+        _origAccentSet(c)
+    end
+
     sApi:Slider("UI Scale", "Resize the whole interface", 50, 150, 100, function(v)
         userScale = v / 100
         applyScale()
