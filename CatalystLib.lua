@@ -1,5 +1,5 @@
 local _Catalyst = {}
-_Catalyst.Version = "2.4"
+_Catalyst.Version = "2.5"
 _Catalyst.RainbowColorValue = 0
 _Catalyst.HueSelectionPosition = 0
 _Catalyst.Flags = {}
@@ -321,7 +321,9 @@ local function applyTheme(name)
         pcall(fn, t)
     end
 
-    if not _Catalyst._customAccent then
+    if _Catalyst._customAccent then
+        setAccent(Theme.Accent)
+    else
         setAccent(t.Accent)
     end
 end
@@ -614,9 +616,10 @@ local function makeAPI(scroll)
 
         local state = default and true or false
 
-        local function applyVisual()
+        local function refreshVisual()
             pill.BackgroundColor3 = state and Theme.Accent or Theme.Stroke
             knob.BackgroundColor3 = Theme.Text
+            knob.Position = UDim2.new(state and 1 or 0, state and -18 or 2, 0.5, 0)
         end
 
         local function apply(v, fire)
@@ -631,10 +634,13 @@ local function makeAPI(scroll)
         onAccent(function(c)
             if state then
                 pill.BackgroundColor3 = c
+            else
+                pill.BackgroundColor3 = Theme.Stroke
             end
+            knob.BackgroundColor3 = Theme.Text
         end)
 
-        onTheme(function(t)
+        onTheme(function()
             knob.BackgroundColor3 = Theme.Text
             pill.BackgroundColor3 = state and Theme.Accent or Theme.Stroke
         end)
@@ -715,6 +721,7 @@ local function makeAPI(scroll)
         end
 
         apply(state, false)
+        refreshVisual()
         if flag then
             _Catalyst.Config[flag] = {
                 Get     = function() return state end,
@@ -960,6 +967,228 @@ local function makeAPI(scroll)
         }
     end
 
+    function api:MultiDropdown(text, list, callback, flag, default)
+        list = list or {}
+        callback = callback or function() end
+        local card = newCard(38)
+        card.ClipsDescendants = true
+
+        local title = Instance.new("TextLabel")
+        title.BackgroundTransparency = 1
+        title.Position = UDim2.new(0, 12, 0, 0)
+        title.Size = UDim2.new(1, -150, 0, 38)
+        title.Font = Enum.Font.GothamMedium
+        title.Text = text
+        title.TextColor3 = Theme.Text
+        title.TextSize = 14
+        title.TextXAlignment = Enum.TextXAlignment.Left
+        title.TextTruncate = Enum.TextTruncate.AtEnd
+        title.Parent = card
+
+        local sel = Instance.new("TextLabel")
+        sel.BackgroundTransparency = 1
+        sel.AnchorPoint = Vector2.new(1, 0)
+        sel.Position = UDim2.new(1, -34, 0, 0)
+        sel.Size = UDim2.new(0, 130, 0, 38)
+        sel.Font = Enum.Font.Gotham
+        sel.Text = "None"
+        sel.TextColor3 = Theme.SubText
+        sel.TextSize = 13
+        sel.TextXAlignment = Enum.TextXAlignment.Right
+        sel.TextTruncate = Enum.TextTruncate.AtEnd
+        sel.Parent = card
+
+        local arrow = Instance.new("TextLabel")
+        arrow.BackgroundTransparency = 1
+        arrow.AnchorPoint = Vector2.new(1, 0)
+        arrow.Position = UDim2.new(1, -14, 0, 0)
+        arrow.Size = UDim2.new(0, 16, 0, 38)
+        arrow.Font = Enum.Font.GothamBold
+        arrow.Text = "v"
+        arrow.TextColor3 = Theme.SubText
+        arrow.TextSize = 12
+        arrow.Parent = card
+
+        local holder = Instance.new("ScrollingFrame")
+        holder.Position = UDim2.new(0, 8, 0, 40)
+        holder.Size = UDim2.new(1, -16, 1, -46)
+        holder.BackgroundTransparency = 1
+        holder.BorderSizePixel = 0
+        holder.ScrollBarThickness = 3
+        holder.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        holder.CanvasSize = UDim2.new(0, 0, 0, 0)
+        holder.Parent = card
+        regAccent(holder, "ScrollBarImageColor3")
+        local hLayout = Instance.new("UIListLayout")
+        hLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        hLayout.Padding = UDim.new(0, 3)
+        hLayout.Parent = holder
+
+        local items = {}
+        local open = false
+        local selected = {}
+
+        local function isSel(v)
+            for _, x in ipairs(selected) do
+                if x == v then return true end
+            end
+            return false
+        end
+        local function snapshot()
+            local t = {}
+            for _, v in ipairs(selected) do t[#t + 1] = v end
+            return t
+        end
+        local function refreshDisplay()
+            if #selected == 0 then
+                sel.Text = "None"
+                sel.TextColor3 = Theme.SubText
+            else
+                sel.Text = table.concat(selected, ", ")
+                sel.TextColor3 = Theme.Text
+            end
+        end
+        local function sizeCard()
+            if open then
+                local n = math.max(1, math.min(#items, 5))
+                card.Size = UDim2.new(1, 0, 0, 44 + n * 28)
+            else
+                card.Size = UDim2.new(1, 0, 0, 38)
+            end
+        end
+        local function toggleOpen()
+            open = not open
+            tween(arrow, 0.2, { Rotation = open and 180 or 0 })
+            sizeCard()
+        end
+        local function refreshItems()
+            for _, it in ipairs(items) do it.update() end
+        end
+        local function fire()
+            if flag then _Catalyst.Flags[flag] = snapshot() end
+            pcall(callback, snapshot())
+        end
+        local function toggleItem(v)
+            if isSel(v) then
+                for i, x in ipairs(selected) do
+                    if x == v then table.remove(selected, i) break end
+                end
+            else
+                selected[#selected + 1] = v
+            end
+            refreshItems()
+            refreshDisplay()
+            fire()
+        end
+        local function setSelected(tbl, doFire)
+            selected = {}
+            if type(tbl) == "table" then
+                for _, v in ipairs(tbl) do selected[#selected + 1] = v end
+            end
+            refreshItems()
+            refreshDisplay()
+            if flag then _Catalyst.Flags[flag] = snapshot() end
+            if doFire then pcall(callback, snapshot()) end
+        end
+        local function addItem(v)
+            local row = Instance.new("TextButton")
+            row.Size = UDim2.new(1, 0, 0, 25)
+            row.BackgroundColor3 = Theme.Panel
+            row.AutoButtonColor = false
+            row.Text = ""
+            row.Parent = holder
+            corner(row, 4)
+
+            local cb = Instance.new("Frame")
+            cb.AnchorPoint = Vector2.new(0, 0.5)
+            cb.Position = UDim2.new(0, 7, 0.5, 0)
+            cb.Size = UDim2.new(0, 15, 0, 15)
+            cb.BackgroundColor3 = Theme.Panel
+            cb.BorderSizePixel = 0
+            cb.Parent = row
+            corner(cb, 4)
+            local cbStroke = stroke(cb, Theme.Stroke, 1, 0)
+
+            local check = Instance.new("TextLabel")
+            check.BackgroundTransparency = 1
+            check.Size = UDim2.new(1, 0, 1, 0)
+            check.Font = Enum.Font.GothamBold
+            check.Text = "X"
+            check.TextColor3 = Color3.fromRGB(255, 255, 255)
+            check.TextSize = 11
+            check.Visible = false
+            check.Parent = cb
+
+            local nameLbl = Instance.new("TextLabel")
+            nameLbl.BackgroundTransparency = 1
+            nameLbl.Position = UDim2.new(0, 30, 0, 0)
+            nameLbl.Size = UDim2.new(1, -36, 1, 0)
+            nameLbl.Font = Enum.Font.Gotham
+            nameLbl.Text = tostring(v)
+            nameLbl.TextColor3 = Theme.SubText
+            nameLbl.TextSize = 13
+            nameLbl.TextXAlignment = Enum.TextXAlignment.Left
+            nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
+            nameLbl.Parent = row
+
+            local function update()
+                local on = isSel(v)
+                cb.BackgroundColor3 = on and Theme.Accent or Theme.Panel
+                cbStroke.Color = on and Theme.Accent or Theme.Stroke
+                check.Visible = on
+                nameLbl.TextColor3 = on and Theme.Text or Theme.SubText
+            end
+
+            row.MouseEnter:Connect(function()
+                tween(row, 0.12, { BackgroundColor3 = Theme.Hover })
+            end)
+            row.MouseLeave:Connect(function()
+                tween(row, 0.12, { BackgroundColor3 = Theme.Panel })
+            end)
+            row.MouseButton1Click:Connect(function() toggleItem(v) end)
+
+            items[#items + 1] = { instance = row, update = update }
+            update()
+        end
+
+        for _, v in ipairs(list) do addItem(v) end
+        hitOverlay(card, 38).MouseButton1Click:Connect(toggleOpen)
+
+        onAccent(refreshItems)
+        onTheme(refreshItems)
+        onTheme(refreshDisplay)
+
+        if type(default) == "table" then
+            setSelected(default, false)
+        else
+            refreshDisplay()
+        end
+
+        if flag then
+            _Catalyst.Config[flag] = {
+                Get     = function() return snapshot() end,
+                Set     = function(v) setSelected(v, true) end,
+                Default = snapshot(),
+            }
+            _Catalyst.Flags[flag] = snapshot()
+        end
+
+        return {
+            Get         = function() return snapshot() end,
+            GetSelected = function() return snapshot() end,
+            Set         = function(v) setSelected(v, true) end,
+            Add         = function(v) addItem(v) if open then sizeCard() end end,
+            Clear       = function() setSelected({}, true) end,
+            Refresh     = function(newList)
+                for _, it in ipairs(items) do it.instance:Destroy() end
+                items = {}
+                for _, v in ipairs(newList or {}) do addItem(v) end
+                refreshDisplay()
+                sizeCard()
+            end,
+        }
+    end
+
     function api:Colorpicker(text, default, callback, flag)
         default = default or Theme.Accent
         callback = callback or function() end
@@ -1058,6 +1287,7 @@ local function makeAPI(scroll)
 
         onTheme(function()
             rbKnob.BackgroundColor3 = Theme.Text
+            rbRow.TextColor3 = Theme.SubText
             if not rainbow then rbPill.BackgroundColor3 = Theme.Stroke end
         end)
 
@@ -1124,8 +1354,9 @@ local function makeAPI(scroll)
         end
         pcall(callback, default)
         return {
-            Get = function() return Color3.fromHSV(h, s, v) end,
-            Set = function(c) h, s, v = Color3.toHSV(c) applyColor(true) end,
+            Get       = function() return Color3.fromHSV(h, s, v) end,
+            Set       = function(c) h, s, v = Color3.toHSV(c) applyColor(true) end,
+            SetSilent = function(c) h, s, v = Color3.toHSV(c) applyColor(false) end,
         }
     end
 
@@ -1186,6 +1417,25 @@ local function makeAPI(scroll)
             boxStroke.Color = Theme.Stroke
             keyLbl.TextColor3 = Theme.SubText
         end
+
+        onAccent(function(c)
+            if active then
+                box.BackgroundColor3 = c
+                boxStroke.Color = c
+            end
+        end)
+        onTheme(function()
+            if active then
+                box.BackgroundColor3 = Theme.Accent
+                boxStroke.Color = Theme.Accent
+                keyLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+            else
+                box.BackgroundColor3 = Theme.Panel
+                boxStroke.Color = Theme.Stroke
+                keyLbl.TextColor3 = Theme.SubText
+            end
+            modeLbl.TextColor3 = Theme.SubText
+        end)
 
         local listening = false
         local function setKey(k)
@@ -1653,14 +1903,9 @@ function _Catalyst:Window(opt)
             table.sort(arr, function(a, b) return a.order < b.order end)
         end
 
-        local leftCount   = #byEdge.Left
-        local rightCount  = #byEdge.Right
-        local topCount    = #byEdge.Top
-        local bottomCount = #byEdge.Bottom
-
         local rect = { x = PAD, y = PAD, w = WIN_W - 2 * PAD, h = WIN_H - 2 * PAD }
-        local leftW   = leftCount   > 0 and SIDE_W or 0
-        local rightW  = rightCount  > 0 and SIDE_W or 0
+        local leftW   = (#byEdge.Left  > 0) and SIDE_W or 0
+        local rightW  = (#byEdge.Right > 0) and SIDE_W or 0
         local innerX  = rect.x + (leftW  > 0 and leftW  + GAP or 0)
         local innerW  = rect.w - (leftW  > 0 and leftW  + GAP or 0) - (rightW > 0 and rightW + GAP or 0)
 
@@ -1833,35 +2078,65 @@ function _Catalyst:Window(opt)
     makePanelDrag("Tabs")
     makePanelDrag("Settings")
 
+    local PLAYER_NAME = LocalPlayer.DisplayName or LocalPlayer.Name
+    local DEFAULT_HEADSHOT = "rbxthumb://type=AvatarHeadShot&id="
+        .. tostring(LocalPlayer.UserId) .. "&w=60&h=60"
+
+    local function resolveImage(str)
+        if not str or str == "" then
+            return DEFAULT_HEADSHOT
+        end
+        local num = tonumber(str)
+        if num then
+            return "rbxassetid://" .. tostring(math.floor(num))
+        end
+        return str
+    end
+
+    local function getClientId()
+        local id
+        pcall(function()
+            id = game:GetService("RbxAnalyticsService"):GetClientId()
+        end)
+        return tostring(id or "unknown")
+    end
+
     local wmFrame = Instance.new("Frame")
     wmFrame.Name = "_CatalystWatermark"
-    wmFrame.Size = UDim2.new(0, 260, 0, 32)
-    wmFrame.Position = UDim2.new(0, 12, 0, 12)
+    wmFrame.AnchorPoint = Vector2.new(0, 1)
+    wmFrame.Size = UDim2.new(0, 300, 0, 54)
+    wmFrame.Position = UDim2.new(0, 14, 1, -14)
     wmFrame.BackgroundColor3 = Theme.Panel
     wmFrame.BorderSizePixel = 0
     wmFrame.Active = true
-    wmFrame.Visible = false
+    wmFrame.Visible = true
     wmFrame.ZIndex = 100
     wmFrame.Parent = ScreenGui
-    corner(wmFrame, 6)
+    corner(wmFrame, 8)
     local wmStroke = stroke(wmFrame, Theme.Stroke, 1, 0.4)
 
-    local wmAccentBar = Instance.new("Frame")
-    wmAccentBar.Size = UDim2.new(0, 3, 1, -8)
-    wmAccentBar.Position = UDim2.new(0, 6, 0, 4)
-    wmAccentBar.BorderSizePixel = 0
-    wmAccentBar.Parent = wmFrame
-    corner(wmAccentBar, 2)
-    regAccent(wmAccentBar, "BackgroundColor3")
+    local wmImage = Instance.new("ImageLabel")
+    wmImage.AnchorPoint = Vector2.new(0, 0.5)
+    wmImage.Position = UDim2.new(0, 8, 0.5, 0)
+    wmImage.Size = UDim2.new(0, 38, 0, 38)
+    wmImage.BackgroundColor3 = Theme.Element
+    wmImage.BorderSizePixel = 0
+    wmImage.Image = DEFAULT_HEADSHOT
+    wmImage.ScaleType = Enum.ScaleType.Crop
+    wmImage.ZIndex = 101
+    wmImage.Parent = wmFrame
+    corner(wmImage, 8)
+    local wmImgStroke = stroke(wmImage, Theme.Accent, 1.5, 0)
+    regAccent(wmImgStroke, "Color")
 
     local wmLabel = Instance.new("TextLabel")
     wmLabel.BackgroundTransparency = 1
-    wmLabel.Position = UDim2.new(0, 18, 0, 0)
-    wmLabel.Size = UDim2.new(1, -22, 0.6, 0)
+    wmLabel.Position = UDim2.new(0, 54, 0, 8)
+    wmLabel.Size = UDim2.new(1, -62, 0, 18)
     wmLabel.Font = Enum.Font.GothamBold
-    wmLabel.Text = Title
+    wmLabel.Text = PLAYER_NAME
     wmLabel.TextColor3 = Theme.Text
-    wmLabel.TextSize = 13
+    wmLabel.TextSize = 14
     wmLabel.TextXAlignment = Enum.TextXAlignment.Left
     wmLabel.TextTruncate = Enum.TextTruncate.AtEnd
     wmLabel.ZIndex = 101
@@ -1869,8 +2144,8 @@ function _Catalyst:Window(opt)
 
     local wmSub = Instance.new("TextLabel")
     wmSub.BackgroundTransparency = 1
-    wmSub.Position = UDim2.new(0, 18, 0.55, 0)
-    wmSub.Size = UDim2.new(1, -22, 0.45, 0)
+    wmSub.Position = UDim2.new(0, 54, 0, 28)
+    wmSub.Size = UDim2.new(1, -62, 0, 16)
     wmSub.Font = Enum.Font.Gotham
     wmSub.Text = ""
     wmSub.TextColor3 = Theme.SubText
@@ -1884,7 +2159,19 @@ function _Catalyst:Window(opt)
         wmFrame.BackgroundColor3 = Theme.Panel
         wmLabel.TextColor3 = Theme.Text
         wmSub.TextColor3 = Theme.SubText
+        wmImage.BackgroundColor3 = Theme.Element
     end)
+
+    local function setWatermarkName(t)
+        if t and t ~= "" then
+            wmLabel.Text = t
+        else
+            wmLabel.Text = PLAYER_NAME
+        end
+    end
+    local function setWatermarkImage(t)
+        wmImage.Image = resolveImage(t)
+    end
 
     local wmDragging, wmStartInput, wmStartPos = false, nil, nil
     wmFrame.InputBegan:Connect(function(i)
@@ -1913,18 +2200,12 @@ function _Catalyst:Window(opt)
         end
     end)
 
-    local function getClientId()
-        local id = LocalPlayer and LocalPlayer.UserId or 0
-        return tostring(id)
-    end
-
     taskLib.spawn(function()
         while alive() do
-            if wmFrame.Visible then
-                local t = os.date("*t")
-                local dateStr = string.format("%02d/%02d/%04d %02d:%02d:%02d", t.month, t.day, t.year, t.hour, t.min, t.sec)
-                wmSub.Text = getClientId() .. "  |  " .. dateStr
-            end
+            local t = os.date("*t")
+            local dateStr = string.format("%02d/%02d/%04d %02d:%02d:%02d",
+                t.month, t.day, t.year, t.hour, t.min, t.sec)
+            wmSub.Text = getClientId() .. "  |  " .. dateStr
             taskLib.wait(1)
         end
     end)
@@ -2003,6 +2284,16 @@ function _Catalyst:Window(opt)
         entry.activate = activate
         onAccent(function(c)
             if ic and container.Visible then ic.ImageColor3 = c end
+        end)
+        onTheme(function()
+            btn.BackgroundColor3 = Theme.Element
+            if container.Visible then
+                lbl.TextColor3 = Theme.Text
+                if ic then ic.ImageColor3 = Theme.Accent end
+            else
+                lbl.TextColor3 = Theme.SubText
+                if ic then ic.ImageColor3 = Theme.SubText end
+            end
         end)
         btn.MouseButton1Click:Connect(activate)
         btn.MouseEnter:Connect(function()
@@ -2120,6 +2411,20 @@ function _Catalyst:Window(opt)
         return out
     end
 
+    local function applyAllVisuals()
+        if _Catalyst._customAccent then
+            setAccent(Theme.Accent)
+        else
+            local tn = _Catalyst.Flags["_theme"]
+            local tt = Themes[tn] or Theme
+            setAccent(tt.Accent or Theme.Accent)
+        end
+        for _, fn in ipairs(ThemeListeners) do
+            pcall(fn, Theme)
+        end
+        relayout(true)
+    end
+
     function Window:SaveConfig(name)
         if not name or name == "" then return false end
         local data = {}
@@ -2130,6 +2435,7 @@ function _Catalyst:Window(opt)
         if not ok then return false end
         FileSystem.write(ConfigFolder .. "/" .. name .. ".json", json)
         writeMeta({ recent = name })
+        applyAllVisuals()
         return true
     end
 
@@ -2142,6 +2448,7 @@ function _Catalyst:Window(opt)
         local ok, data = pcall(function() return HttpService:JSONDecode(raw) end)
         if not ok or type(data) ~= "table" then return false end
         if data["_theme"] ~= nil and _Catalyst.Config["_theme"] then
+            _Catalyst._customAccent = false
             pcall(_Catalyst.Config["_theme"].Set, deserialize(data["_theme"]))
         end
         for flag, val in pairs(data) do
@@ -2154,6 +2461,7 @@ function _Catalyst:Window(opt)
             pcall(_Catalyst.Config["_accent"].Set, deserialize(data["_accent"]))
         end
         writeMeta({ recent = name })
+        applyAllVisuals()
         return true
     end
 
@@ -2164,9 +2472,19 @@ function _Catalyst:Window(opt)
     end
     function Window:GetConfigs() return getConfigList() end
     function Window:ResetDefaults()
-        for _, c in pairs(_Catalyst.Config) do
-            pcall(c.Set, c.Default)
+        if _Catalyst.Config["_theme"] then
+            _Catalyst._customAccent = false
+            pcall(_Catalyst.Config["_theme"].Set, _Catalyst.Config["_theme"].Default)
         end
+        for flag, c in pairs(_Catalyst.Config) do
+            if flag ~= "_theme" and flag ~= "_accent" then
+                pcall(c.Set, c.Default)
+            end
+        end
+        if _Catalyst.Config["_accent"] then
+            pcall(_Catalyst.Config["_accent"].Set, _Catalyst.Config["_accent"].Default)
+        end
+        applyAllVisuals()
     end
 
     local settingsScroll = Instance.new("ScrollingFrame")
@@ -2231,8 +2549,8 @@ function _Catalyst:Window(opt)
     sApi:Dropdown("UI Theme", { "GX", "Discord", "Light" }, function(v)
         _Catalyst._customAccent = false
         applyTheme(v)
-        if accentPicker and accentPicker.Set then
-            accentPicker.Set(Theme.Accent)
+        if accentPicker and accentPicker.SetSilent then
+            accentPicker.SetSilent(Theme.Accent)
         end
     end, "_theme", "GX")
 
@@ -2258,9 +2576,12 @@ function _Catalyst:Window(opt)
     end, "_togglekey")
 
     sApi:Section("Watermark")
-    sApi:Toggle("Show Watermark", "Display a draggable info overlay", false, function(on)
-        wmFrame.Visible = on
-    end, "_watermark")
+    sApi:Textbox("Display Name", "Custom name shown on the watermark", false, function(t)
+        setWatermarkName(t)
+    end, "_wmname")
+    sApi:Textbox("Avatar Image", "rbxassetid number or asset url", false, function(t)
+        setWatermarkImage(t)
+    end, "_wmimage")
 
     sApi:Section("About")
     sApi:Label("_Catalyst " .. _Catalyst.Version)
@@ -2327,16 +2648,20 @@ function _Catalyst:Window(opt)
                 Window:Notify("Config", "Auto-loaded '" .. meta.recent .. "'")
             end
         end
+        applyAllVisuals()
     end
     taskLib.spawn(function()
         taskLib.wait(0.4)
         if alive() and not didInit then Window:Init() end
     end)
 
-    Window.SetAccent = setAccent
-    Window.SetTheme  = applyTheme
-    Window.Toggle    = toggleUI
-    Window.Relayout  = function() relayout(true) end
+    Window.SetAccent       = setAccent
+    Window.SetTheme        = applyTheme
+    Window.Toggle          = toggleUI
+    Window.Relayout        = function() relayout(true) end
+    Window.SetWatermarkName  = setWatermarkName
+    Window.SetWatermarkImage = setWatermarkImage
+    Window.RefreshVisuals  = function() applyAllVisuals() end
 
     relayout(false)
     computeFit()
