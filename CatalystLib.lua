@@ -1,5 +1,5 @@
 local _Catalyst = {}
-_Catalyst.Version = "GX 2.3"
+_Catalyst.Version = "2.4"
 _Catalyst.RainbowColorValue = 0
 _Catalyst.HueSelectionPosition = 0
 _Catalyst.Flags = {}
@@ -9,7 +9,6 @@ _Catalyst._customAccent = false
 local Players          = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local TweenService     = game:GetService("TweenService")
-local RunService       = game:GetService("RunService")
 local HttpService      = game:GetService("HttpService")
 local LocalPlayer      = Players.LocalPlayer
 
@@ -82,6 +81,8 @@ _Catalyst.Themes = Themes
 
 local AccentObjects   = {}
 local AccentListeners = {}
+local ThemeListeners  = {}
+
 local function regAccent(obj, prop)
     AccentObjects[#AccentObjects + 1] = { obj = obj, prop = prop }
     obj[prop] = Theme.Accent
@@ -90,6 +91,10 @@ end
 local function onAccent(fn)
     AccentListeners[#AccentListeners + 1] = fn
 end
+local function onTheme(fn)
+    ThemeListeners[#ThemeListeners + 1] = fn
+end
+
 local function setAccent(c)
     Theme.Accent = c
     for _, e in ipairs(AccentObjects) do
@@ -263,6 +268,7 @@ end
 local function applyTheme(name)
     local t = Themes[name]
     if not t then return end
+
     local map = {}
     for k, v in pairs(t) do
         if k ~= "Accent" and Theme[k] then
@@ -272,34 +278,49 @@ local function applyTheme(name)
     for k, v in pairs(t) do
         if k ~= "Accent" then Theme[k] = v end
     end
+
     local function conv(c)
         for _, m in ipairs(map) do
             if c == m.from then return m.to end
         end
         return nil
     end
+
     for _, obj in ipairs(ScreenGui:GetDescendants()) do
         if obj:IsA("GuiObject") then
-            local nb = conv(obj.BackgroundColor3)
-            if nb then obj.BackgroundColor3 = nb end
+            if obj.BackgroundColor3 ~= Theme.Accent then
+                local nb = conv(obj.BackgroundColor3)
+                if nb then obj.BackgroundColor3 = nb end
+            end
         end
         if obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
-            local nt = conv(obj.TextColor3)
-            if nt then obj.TextColor3 = nt end
+            if obj.TextColor3 ~= Theme.Accent then
+                local nt = conv(obj.TextColor3)
+                if nt then obj.TextColor3 = nt end
+            end
             if obj:IsA("TextBox") then
                 local np = conv(obj.PlaceholderColor3)
                 if np then obj.PlaceholderColor3 = np end
             end
         end
         if obj:IsA("ImageLabel") or obj:IsA("ImageButton") then
-            local ni = conv(obj.ImageColor3)
-            if ni then obj.ImageColor3 = ni end
+            if obj.ImageColor3 ~= Theme.Accent then
+                local ni = conv(obj.ImageColor3)
+                if ni then obj.ImageColor3 = ni end
+            end
         end
         if obj:IsA("UIStroke") then
-            local ns = conv(obj.Color)
-            if ns then obj.Color = ns end
+            if obj.Color ~= Theme.Accent then
+                local ns = conv(obj.Color)
+                if ns then obj.Color = ns end
+            end
         end
     end
+
+    for _, fn in ipairs(ThemeListeners) do
+        pcall(fn, t)
+    end
+
     if not _Catalyst._customAccent then
         setAccent(t.Accent)
     end
@@ -334,9 +355,9 @@ local function makeAPI(scroll)
     layout.Parent    = scroll
 
     local p = Instance.new("UIPadding")
-    p.PaddingTop = UDim.new(0, 6)
-    p.PaddingLeft = UDim.new(0, 6)
-    p.PaddingRight = UDim.new(0, 8)
+    p.PaddingTop    = UDim.new(0, 6)
+    p.PaddingLeft   = UDim.new(0, 6)
+    p.PaddingRight  = UDim.new(0, 8)
     p.PaddingBottom = UDim.new(0, 10)
     p.Parent = scroll
 
@@ -489,8 +510,8 @@ local function makeAPI(scroll)
         end)
 
         _Catalyst.Config[secFlag] = {
-            Get = function() return sec.collapsed end,
-            Set = function(v) setCollapsed(v and true or false) end,
+            Get     = function() return sec.collapsed end,
+            Set     = function(v) setCollapsed(v and true or false) end,
             Default = false,
         }
         _Catalyst.Flags[secFlag] = false
@@ -592,15 +613,30 @@ local function makeAPI(scroll)
         corner(knob, 8)
 
         local state = default and true or false
+
+        local function applyVisual()
+            pill.BackgroundColor3 = state and Theme.Accent or Theme.Stroke
+            knob.BackgroundColor3 = Theme.Text
+        end
+
         local function apply(v, fire)
             state = v and true or false
             tween(knob, 0.18, { Position = UDim2.new(state and 1 or 0, state and -18 or 2, 0.5, 0) })
             tween(pill, 0.18, { BackgroundColor3 = state and Theme.Accent or Theme.Stroke })
+            knob.BackgroundColor3 = Theme.Text
             if flag then _Catalyst.Flags[flag] = state end
             if fire then pcall(callback, state) end
         end
+
         onAccent(function(c)
-            if state then pill.BackgroundColor3 = c end
+            if state then
+                pill.BackgroundColor3 = c
+            end
+        end)
+
+        onTheme(function(t)
+            knob.BackgroundColor3 = Theme.Text
+            pill.BackgroundColor3 = state and Theme.Accent or Theme.Stroke
         end)
 
         hitOverlay(card).MouseButton1Click:Connect(function()
@@ -670,8 +706,8 @@ local function makeAPI(scroll)
 
             if flag then
                 _Catalyst.Config[flag .. "Key"] = {
-                    Get = function() return kbKey end,
-                    Set = function(k) setKbKey(k) end,
+                    Get     = function() return kbKey end,
+                    Set     = function(k) setKbKey(k) end,
                     Default = kbKey,
                 }
                 _Catalyst.Flags[flag .. "Key"] = kbKey
@@ -680,9 +716,11 @@ local function makeAPI(scroll)
 
         apply(state, false)
         if flag then
-            _Catalyst.Config[flag] = { Get = function() return state end,
-                                       Set = function(v) apply(v, true) end,
-                                       Default = state }
+            _Catalyst.Config[flag] = {
+                Get     = function() return state end,
+                Set     = function(v) apply(v, true) end,
+                Default = state,
+            }
             _Catalyst.Flags[flag] = state
         end
         if state then pcall(callback, true) end
@@ -710,7 +748,7 @@ local function makeAPI(scroll)
             return prefix .. v .. suffix
         end
 
-        local title = makeTitle(card, text, 8, -104)
+        makeTitle(card, text, 8, -104)
 
         local valLbl = Instance.new("TextLabel")
         valLbl.BackgroundTransparency = 1
@@ -753,6 +791,12 @@ local function makeAPI(scroll)
         knob.Parent = track
         corner(knob, 7)
 
+        onTheme(function()
+            knob.BackgroundColor3 = Theme.Text
+            track.BackgroundColor3 = Theme.Stroke
+            valLbl.TextColor3 = Theme.Text
+        end)
+
         local value = default
         local function setAlpha(a, fire)
             a = math.clamp(a, 0, 1)
@@ -775,9 +819,11 @@ local function makeAPI(scroll)
 
         setValue(default, false)
         if flag then
-            _Catalyst.Config[flag] = { Get = function() return value end,
-                                       Set = function(v) setValue(v, true) end,
-                                       Default = default }
+            _Catalyst.Config[flag] = {
+                Get     = function() return value end,
+                Set     = function(v) setValue(v, true) end,
+                Default = default,
+            }
             _Catalyst.Flags[flag] = value
         end
         pcall(callback, value)
@@ -893,16 +939,18 @@ local function makeAPI(scroll)
 
         if default then choose(default, false) end
         if flag then
-            _Catalyst.Config[flag] = { Get = function() return selected end,
-                                       Set = function(v) choose(v, true) end,
-                                       Default = default }
+            _Catalyst.Config[flag] = {
+                Get     = function() return selected end,
+                Set     = function(v) choose(v, true) end,
+                Default = default,
+            }
             _Catalyst.Flags[flag] = selected
         end
 
         return {
-            Get = function() return selected end,
-            Set = function(v) choose(v, true) end,
-            Add = function(v) addItem(v) if open then sizeCard() end end,
+            Get     = function() return selected end,
+            Set     = function(v) choose(v, true) end,
+            Add     = function(v) addItem(v) if open then sizeCard() end end,
             Refresh = function(newList)
                 for _, it in ipairs(items) do it:Destroy() end
                 items = {}
@@ -941,6 +989,7 @@ local function makeAPI(scroll)
         box.Image = "rbxassetid://4155801252"
         box.Parent = card
         corner(box, 4)
+
         local boxDot = Instance.new("Frame")
         boxDot.AnchorPoint = Vector2.new(0.5, 0.5)
         boxDot.Size = UDim2.new(0, 10, 0, 10)
@@ -950,12 +999,12 @@ local function makeAPI(scroll)
         corner(boxDot, 5)
         stroke(boxDot, Color3.new(0, 0, 0), 1, 0.3)
 
-        local hue = Instance.new("Frame")
-        hue.Position = UDim2.new(0, 12, 0, 150)
-        hue.Size = UDim2.new(1, -24, 0, 14)
-        hue.BorderSizePixel = 0
-        hue.Parent = card
-        corner(hue, 4)
+        local hueBar = Instance.new("Frame")
+        hueBar.Position = UDim2.new(0, 12, 0, 150)
+        hueBar.Size = UDim2.new(1, -24, 0, 14)
+        hueBar.BorderSizePixel = 0
+        hueBar.Parent = card
+        corner(hueBar, 4)
         local hg = Instance.new("UIGradient")
         hg.Color = ColorSequence.new {
             ColorSequenceKeypoint.new(0.00, Color3.fromRGB(255, 0, 0)),
@@ -966,13 +1015,14 @@ local function makeAPI(scroll)
             ColorSequenceKeypoint.new(0.83, Color3.fromRGB(255, 0, 255)),
             ColorSequenceKeypoint.new(1.00, Color3.fromRGB(255, 0, 0)),
         }
-        hg.Parent = hue
+        hg.Parent = hueBar
+
         local hueDot = Instance.new("Frame")
         hueDot.AnchorPoint = Vector2.new(0.5, 0.5)
         hueDot.Size = UDim2.new(0, 6, 1, 4)
         hueDot.BackgroundColor3 = Color3.new(1, 1, 1)
         hueDot.BorderSizePixel = 0
-        hueDot.Parent = hue
+        hueDot.Parent = hueBar
         corner(hueDot, 3)
         stroke(hueDot, Color3.new(0, 0, 0), 1, 0.3)
 
@@ -987,6 +1037,7 @@ local function makeAPI(scroll)
         rbRow.TextXAlignment = Enum.TextXAlignment.Left
         rbRow.AutoButtonColor = false
         rbRow.Parent = card
+
         local rbPill = Instance.new("Frame")
         rbPill.AnchorPoint = Vector2.new(1, 0.5)
         rbPill.Position = UDim2.new(1, 0, 0.5, 0)
@@ -995,6 +1046,7 @@ local function makeAPI(scroll)
         rbPill.BorderSizePixel = 0
         rbPill.Parent = rbRow
         corner(rbPill, 8)
+
         local rbKnob = Instance.new("Frame")
         rbKnob.Position = UDim2.new(0, 2, 0.5, 0)
         rbKnob.AnchorPoint = Vector2.new(0, 0.5)
@@ -1003,6 +1055,11 @@ local function makeAPI(scroll)
         rbKnob.BorderSizePixel = 0
         rbKnob.Parent = rbPill
         corner(rbKnob, 6)
+
+        onTheme(function()
+            rbKnob.BackgroundColor3 = Theme.Text
+            if not rainbow then rbPill.BackgroundColor3 = Theme.Stroke end
+        end)
 
         local open = false
         local function sizeCard()
@@ -1029,9 +1086,9 @@ local function makeAPI(scroll)
             s, v = x, 1 - y
             applyColor(true)
         end)
-        bindDrag(hue, function(posV)
+        bindDrag(hueBar, function(posV)
             if rainbow then return end
-            local x = math.clamp((posV.X - hue.AbsolutePosition.X) / math.max(hue.AbsoluteSize.X, 1), 0, 1)
+            local x = math.clamp((posV.X - hueBar.AbsolutePosition.X) / math.max(hueBar.AbsoluteSize.X, 1), 0, 1)
             h = x
             applyColor(true)
         end)
@@ -1059,8 +1116,8 @@ local function makeAPI(scroll)
         applyColor(false)
         if flag then
             _Catalyst.Config[flag] = {
-                Get = function() return Color3.fromHSV(h, s, v) end,
-                Set = function(c) h, s, v = Color3.toHSV(c) applyColor(true) end,
+                Get     = function() return Color3.fromHSV(h, s, v) end,
+                Set     = function(c) h, s, v = Color3.toHSV(c) applyColor(true) end,
                 Default = default,
             }
             _Catalyst.Flags[flag] = default
@@ -1104,6 +1161,7 @@ local function makeAPI(scroll)
         box.Parent = card
         corner(box, 4)
         local boxStroke = stroke(box, Theme.Stroke, 1, 0)
+
         local keyLbl = Instance.new("TextLabel")
         keyLbl.BackgroundTransparency = 1
         keyLbl.Size = UDim2.new(1, -8, 1, 0)
@@ -1184,13 +1242,18 @@ local function makeAPI(scroll)
         end
 
         if flag then
-            _Catalyst.Config[flag] = { Get = function() return key end,
-                                       Set = function(k) setKey(k) end,
-                                       Default = key }
+            _Catalyst.Config[flag] = {
+                Get     = function() return key end,
+                Set     = function(k) setKey(k) end,
+                Default = key,
+            }
             _Catalyst.Flags[flag] = key
         end
-        return { Get = function() return key end, Set = setKey,
-                 GetState = function() return bstate end }
+        return {
+            Get      = function() return key end,
+            Set      = setKey,
+            GetState = function() return bstate end,
+        }
     end
 
     function api:Textbox(text, desc, clearOnEnter, callback, flag)
@@ -1238,14 +1301,16 @@ local function makeAPI(scroll)
 
         if flag then
             _Catalyst.Config[flag] = {
-                Get = function() return tb.Text end,
-                Set = function(vv) tb.Text = tostring(vv) pcall(callback, tb.Text) end,
+                Get     = function() return tb.Text end,
+                Set     = function(vv) tb.Text = tostring(vv) pcall(callback, tb.Text) end,
                 Default = "",
             }
             _Catalyst.Flags[flag] = ""
         end
-        return { Get = function() return tb.Text end,
-                 Set = function(vv) tb.Text = tostring(vv) end }
+        return {
+            Get = function() return tb.Text end,
+            Set = function(vv) tb.Text = tostring(vv) end,
+        }
     end
 
     return api
@@ -1259,7 +1324,10 @@ function _Catalyst:Window(opt)
     local SubTitle     = opt.SubTitle or opt.Sub or "GX Edition"
     local ConfigFolder = opt.ConfigFolder or "_CatalystConfigs"
     local ToggleKey    = opt.ToggleKey or opt.CloseBind or Enum.KeyCode.RightAlt
-    if opt.Accent then setAccent(opt.Accent) end
+    if opt.Accent then
+        _Catalyst._customAccent = true
+        setAccent(opt.Accent)
+    end
     if opt.Theme and Themes[opt.Theme] then applyTheme(opt.Theme) end
     FileSystem.makeFolder(ConfigFolder)
 
@@ -1526,97 +1594,11 @@ function _Catalyst:Window(opt)
         _Catalyst.Flags["_layout"] = getLayout()
     end
     _Catalyst.Config["_layout"] = {
-        Get = function() return getLayout() end,
-        Set = function(v) applyLayout(v) end,
+        Get     = function() return getLayout() end,
+        Set     = function(v) applyLayout(v) end,
         Default = getLayout(),
     }
     _Catalyst.Flags["_layout"] = getLayout()
-
-    local function computeZoneRects()
-        local byEdge = { Left = {}, Right = {}, Top = {}, Bottom = {} }
-        for _, p in pairs(panels) do table.insert(byEdge[p.edge], p) end
-        for _, arr in pairs(byEdge) do
-            table.sort(arr, function(a, b) return a.order < b.order end)
-        end
-
-        local leftCount   = #byEdge.Left
-        local rightCount  = #byEdge.Right
-        local topCount    = #byEdge.Top
-        local bottomCount = #byEdge.Bottom
-
-        local rect = { x = PAD, y = PAD, w = WIN_W - 2 * PAD, h = WIN_H - 2 * PAD }
-
-        local leftW   = leftCount   > 0 and SIDE_W or 0
-        local rightW  = rightCount  > 0 and SIDE_W or 0
-        local topH    = topCount    > 0 and SIDE_H or 0
-        local bottomH = bottomCount > 0 and SIDE_H or 0
-
-        local innerX = rect.x + (leftW > 0 and leftW + GAP or 0)
-        local innerY = rect.y + (topH  > 0 and topH  + GAP or 0)
-        local innerW = rect.w - (leftW > 0 and leftW + GAP or 0) - (rightW > 0 and rightW + GAP or 0)
-        local innerH = rect.h - (topH  > 0 and topH  + GAP or 0) - (bottomH > 0 and bottomH + GAP or 0)
-
-        local zoneRects = {}
-
-        local function addEdgeZones(edge, count, isVertical)
-            if count == 0 then
-                local zx, zy, zw, zh
-                if edge == "Left" then
-                    zx, zy, zw, zh = rect.x, rect.y, SIDE_W, rect.h
-                elseif edge == "Right" then
-                    zx, zy, zw, zh = rect.x + rect.w - SIDE_W, rect.y, SIDE_W, rect.h
-                elseif edge == "Top" then
-                    zx, zy, zw, zh = innerX, rect.y, innerW, SIDE_H
-                elseif edge == "Bottom" then
-                    zx, zy, zw, zh = innerX, rect.y + rect.h - SIDE_H, innerW, SIDE_H
-                end
-                zoneRects[edge] = { { x = zx, y = zy, w = zw, h = zh, label = "DOCK HERE", order = 1, total = 1 } }
-            else
-                local slots = {}
-                if isVertical then
-                    local zy0 = rect.y
-                    local each = (rect.h - GAP * count) / (count + 1)
-                    for i = 1, count + 1 do
-                        local slotY = zy0 + (i - 1) * (each + GAP)
-                        local zx, zw
-                        if edge == "Left" then
-                            zx, zw = rect.x, SIDE_W
-                        else
-                            zx, zw = rect.x + rect.w - SIDE_W, SIDE_W
-                        end
-                        slots[#slots + 1] = {
-                            x = zx, y = slotY, w = zw, h = each,
-                            label = "DOCK HERE", order = i, total = count + 1
-                        }
-                    end
-                else
-                    local cx0 = innerX
-                    local each = (innerW - GAP * count) / (count + 1)
-                    for i = 1, count + 1 do
-                        local slotX = cx0 + (i - 1) * (each + GAP)
-                        local zy0, zh
-                        if edge == "Top" then
-                            zy0, zh = rect.y, SIDE_H
-                        else
-                            zy0, zh = rect.y + rect.h - SIDE_H, SIDE_H
-                        end
-                        slots[#slots + 1] = {
-                            x = slotX, y = zy0, w = each, h = zh,
-                            label = "DOCK HERE", order = i, total = count + 1
-                        }
-                    end
-                end
-                zoneRects[edge] = slots
-            end
-        end
-
-        addEdgeZones("Left",   leftCount,   true)
-        addEdgeZones("Right",  rightCount,  true)
-        addEdgeZones("Top",    topCount,    false)
-        addEdgeZones("Bottom", bottomCount, false)
-
-        return zoneRects
-    end
 
     local zoneFrames = {}
 
@@ -1662,9 +1644,7 @@ function _Catalyst:Window(opt)
     local function showZonesForEdge(edge, draggingKey)
         local tempPanels = {}
         for k, p in pairs(panels) do
-            if k ~= draggingKey then
-                tempPanels[k] = p
-            end
+            if k ~= draggingKey then tempPanels[k] = p end
         end
 
         local byEdge = { Left = {}, Right = {}, Top = {}, Bottom = {} }
@@ -1679,19 +1659,14 @@ function _Catalyst:Window(opt)
         local bottomCount = #byEdge.Bottom
 
         local rect = { x = PAD, y = PAD, w = WIN_W - 2 * PAD, h = WIN_H - 2 * PAD }
-
         local leftW   = leftCount   > 0 and SIDE_W or 0
         local rightW  = rightCount  > 0 and SIDE_W or 0
-        local topH    = topCount    > 0 and SIDE_H or 0
-        local bottomH = bottomCount > 0 and SIDE_H or 0
-
-        local innerX = rect.x + (leftW > 0 and leftW + GAP or 0)
-        local innerW = rect.w - (leftW > 0 and leftW + GAP or 0) - (rightW > 0 and rightW + GAP or 0)
+        local innerX  = rect.x + (leftW  > 0 and leftW  + GAP or 0)
+        local innerW  = rect.w - (leftW  > 0 and leftW  + GAP or 0) - (rightW > 0 and rightW + GAP or 0)
 
         local slots = {}
-
         local isVertical = (edge == "Left" or edge == "Right")
-        local count = byEdge[edge] and #byEdge[edge] or 0
+        local count = #byEdge[edge]
 
         if isVertical then
             local each = (rect.h - GAP * count) / (count + 1)
@@ -1857,6 +1832,102 @@ function _Catalyst:Window(opt)
     end
     makePanelDrag("Tabs")
     makePanelDrag("Settings")
+
+    local wmFrame = Instance.new("Frame")
+    wmFrame.Name = "_CatalystWatermark"
+    wmFrame.Size = UDim2.new(0, 260, 0, 32)
+    wmFrame.Position = UDim2.new(0, 12, 0, 12)
+    wmFrame.BackgroundColor3 = Theme.Panel
+    wmFrame.BorderSizePixel = 0
+    wmFrame.Active = true
+    wmFrame.Visible = false
+    wmFrame.ZIndex = 100
+    wmFrame.Parent = ScreenGui
+    corner(wmFrame, 6)
+    local wmStroke = stroke(wmFrame, Theme.Stroke, 1, 0.4)
+
+    local wmAccentBar = Instance.new("Frame")
+    wmAccentBar.Size = UDim2.new(0, 3, 1, -8)
+    wmAccentBar.Position = UDim2.new(0, 6, 0, 4)
+    wmAccentBar.BorderSizePixel = 0
+    wmAccentBar.Parent = wmFrame
+    corner(wmAccentBar, 2)
+    regAccent(wmAccentBar, "BackgroundColor3")
+
+    local wmLabel = Instance.new("TextLabel")
+    wmLabel.BackgroundTransparency = 1
+    wmLabel.Position = UDim2.new(0, 18, 0, 0)
+    wmLabel.Size = UDim2.new(1, -22, 0.6, 0)
+    wmLabel.Font = Enum.Font.GothamBold
+    wmLabel.Text = Title
+    wmLabel.TextColor3 = Theme.Text
+    wmLabel.TextSize = 13
+    wmLabel.TextXAlignment = Enum.TextXAlignment.Left
+    wmLabel.TextTruncate = Enum.TextTruncate.AtEnd
+    wmLabel.ZIndex = 101
+    wmLabel.Parent = wmFrame
+
+    local wmSub = Instance.new("TextLabel")
+    wmSub.BackgroundTransparency = 1
+    wmSub.Position = UDim2.new(0, 18, 0.55, 0)
+    wmSub.Size = UDim2.new(1, -22, 0.45, 0)
+    wmSub.Font = Enum.Font.Gotham
+    wmSub.Text = ""
+    wmSub.TextColor3 = Theme.SubText
+    wmSub.TextSize = 11
+    wmSub.TextXAlignment = Enum.TextXAlignment.Left
+    wmSub.TextTruncate = Enum.TextTruncate.AtEnd
+    wmSub.ZIndex = 101
+    wmSub.Parent = wmFrame
+
+    onTheme(function()
+        wmFrame.BackgroundColor3 = Theme.Panel
+        wmLabel.TextColor3 = Theme.Text
+        wmSub.TextColor3 = Theme.SubText
+    end)
+
+    local wmDragging, wmStartInput, wmStartPos = false, nil, nil
+    wmFrame.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1
+        or i.UserInputType == Enum.UserInputType.Touch then
+            wmDragging = true
+            wmStartInput = i.Position
+            wmStartPos = wmFrame.Position
+        end
+    end)
+    wmFrame.InputEnded:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1
+        or i.UserInputType == Enum.UserInputType.Touch then
+            wmDragging = false
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(i)
+        if not alive() then return end
+        if wmDragging and (i.UserInputType == Enum.UserInputType.MouseMovement
+        or i.UserInputType == Enum.UserInputType.Touch) then
+            local delta = i.Position - wmStartInput
+            wmFrame.Position = UDim2.new(
+                wmStartPos.X.Scale, wmStartPos.X.Offset + delta.X,
+                wmStartPos.Y.Scale, wmStartPos.Y.Offset + delta.Y
+            )
+        end
+    end)
+
+    local function getClientId()
+        local id = LocalPlayer and LocalPlayer.UserId or 0
+        return tostring(id)
+    end
+
+    taskLib.spawn(function()
+        while alive() do
+            if wmFrame.Visible then
+                local t = os.date("*t")
+                local dateStr = string.format("%02d/%02d/%04d %02d:%02d:%02d", t.month, t.day, t.year, t.hour, t.min, t.sec)
+                wmSub.Text = getClientId() .. "  |  " .. dateStr
+            end
+            taskLib.wait(1)
+        end
+    end)
 
     local firstTab = true
     function Window:Tab(name, icon)
@@ -2061,6 +2132,7 @@ function _Catalyst:Window(opt)
         writeMeta({ recent = name })
         return true
     end
+
     function Window:LoadConfig(name)
         if not name or name == "" then return false end
         local path = ConfigFolder .. "/" .. name .. ".json"
@@ -2084,6 +2156,7 @@ function _Catalyst:Window(opt)
         writeMeta({ recent = name })
         return true
     end
+
     function Window:DeleteConfig(name)
         if not name or name == "" then return false end
         FileSystem.delete(ConfigFolder .. "/" .. name .. ".json")
@@ -2168,10 +2241,12 @@ function _Catalyst:Window(opt)
         setAccent(c)
     end, "_accent")
 
-    local _origAccentSet = _Catalyst.Config["_accent"].Set
-    _Catalyst.Config["_accent"].Set = function(c)
-        _Catalyst._customAccent = true
-        _origAccentSet(c)
+    do
+        local origSet = _Catalyst.Config["_accent"].Set
+        _Catalyst.Config["_accent"].Set = function(c)
+            _Catalyst._customAccent = true
+            origSet(c)
+        end
     end
 
     sApi:Slider("UI Scale", "Resize the whole interface", 50, 150, 100, function(v)
@@ -2181,6 +2256,11 @@ function _Catalyst:Window(opt)
     sApi:Bind("Toggle UI Key", ToggleKey, function()
         toggleUI()
     end, "_togglekey")
+
+    sApi:Section("Watermark")
+    sApi:Toggle("Show Watermark", "Display a draggable info overlay", false, function(on)
+        wmFrame.Visible = on
+    end, "_watermark")
 
     sApi:Section("About")
     sApi:Label("_Catalyst " .. _Catalyst.Version)
