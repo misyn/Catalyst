@@ -1,5 +1,5 @@
 local _Catalyst = {}
-_Catalyst.Version = "2.9"
+_Catalyst.Version = "2.7"
 _Catalyst.RainbowColorValue = 0
 _Catalyst.HueSelectionPosition = 0
 _Catalyst.Flags = {}
@@ -1724,14 +1724,16 @@ function _Catalyst:Window(opt)
                 toggleBusy = false
             end)
         end
-        if wmVisible then
-            if streamerMode then
-                local wmFrame = ScreenGui:FindFirstChild("_CatalystWatermark")
-                if wmFrame then
-                    wmFrame.Visible = isOpen
-                end
+        
+        -- Handle watermark visibility with streamer mode
+        if wmVisible and streamerMode then
+            local wmFrame = ScreenGui:FindFirstChild("_CatalystWatermark")
+            if wmFrame then
+                wmFrame.Visible = isOpen
             end
         end
+        
+        -- Handle keybind list visibility with streamer mode
         if streamerMode then
             kbFrame.Visible = isOpen and kbListEnabled and (#kbRows > 0)
         else
