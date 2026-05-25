@@ -1,5 +1,5 @@
 local _Catalyst = {}
-_Catalyst.Version = "2.9"
+_Catalyst.Version = "2.7"
 _Catalyst.RainbowColorValue = 0
 _Catalyst.HueSelectionPosition = 0
 _Catalyst.Flags = {}
@@ -1732,6 +1732,9 @@ function _Catalyst:Window(opt)
                 end
             end
         end
+        if kbListEnabled then
+            kbRefresh()
+        end
     end
 
     local function makePanel(titleText)
@@ -2439,7 +2442,8 @@ function _Catalyst:Window(opt)
     kbHeaderFix.Parent = kbHeader
 
     local kbAccent = Instance.new("Frame")
-    kbAccent.Size = UDim2.new(1, 0, 0, 2)
+    kbAccent.Size = UDim2.new(1, -16, 0, 2)
+    kbAccent.Position = UDim2.new(0, 8, 0, 0)
     kbAccent.BackgroundColor3 = Theme.Accent
     kbAccent.BorderSizePixel = 0
     kbAccent.ZIndex = 102
@@ -2486,6 +2490,8 @@ function _Catalyst:Window(opt)
         kbStroke.Color = Theme.Stroke
     end)
 
+    local KB_DEFAULT_POS = UDim2.new(0, 14, 0.5, 0)
+
     do
         local dragging, si, sp = false, nil, nil
         kbFrame.InputBegan:Connect(function(i)
@@ -2498,6 +2504,12 @@ function _Catalyst:Window(opt)
             if i.UserInputType == Enum.UserInputType.MouseButton1
             or i.UserInputType == Enum.UserInputType.Touch then
                 dragging = false
+                _Catalyst.Flags["_kbpos"] = {
+                    sx = kbFrame.Position.X.Scale,
+                    ox = kbFrame.Position.X.Offset,
+                    sy = kbFrame.Position.Y.Scale,
+                    oy = kbFrame.Position.Y.Offset,
+                }
             end
         end)
         UserInputService.InputChanged:Connect(function(i)
@@ -2513,8 +2525,40 @@ function _Catalyst:Window(opt)
         end)
     end
 
+        _Catalyst.Config["_kbpos"] = {
+        Get = function()
+            return {
+                sx = kbFrame.Position.X.Scale,
+                ox = kbFrame.Position.X.Offset,
+                sy = kbFrame.Position.Y.Scale,
+                oy = kbFrame.Position.Y.Offset,
+            }
+        end,
+        Set = function(v)
+            if type(v) == "table" and v.sx ~= nil then
+                kbFrame.Position = UDim2.new(v.sx, v.ox, v.sy, v.oy)
+            end
+        end,
+        Default = {
+            sx = KB_DEFAULT_POS.X.Scale,
+            ox = KB_DEFAULT_POS.X.Offset,
+            sy = KB_DEFAULT_POS.Y.Scale,
+            oy = KB_DEFAULT_POS.Y.Offset,
+        },
+    }
+    _Catalyst.Flags["_kbpos"] = _Catalyst.Config["_kbpos"].Default
+
     local function kbRefresh()
-        kbFrame.Visible = kbListEnabled and (#kbRows > 0)
+        local shouldShow = kbListEnabled and (#kbRows > 0)
+        if not shouldShow then
+            kbFrame.Visible = false
+            return
+        end
+        if streamerMode then
+            kbFrame.Visible = isOpen
+        else
+            kbFrame.Visible = true
+        end
     end
 
     local function keybindAdd(name, key)
@@ -3104,20 +3148,15 @@ function _Catalyst:Window(opt)
         _Catalyst.Flags["_wmpos"] = _Catalyst.Config["_wmpos"].Default
     end
 
-    sApi:Button("Save Watermark Position", "Store the current watermark position", function()
-        local pos = {
-            sx = wmFrame.Position.X.Scale,
-            ox = wmFrame.Position.X.Offset,
-            sy = wmFrame.Position.Y.Scale,
-            oy = wmFrame.Position.Y.Offset,
-        }
-        _Catalyst.Flags["_wmpos"] = pos
-        Window:Notify("Watermark", "Position saved.")
-    end)
     sApi:Button("Reset Watermark Position", "Move watermark back to default position", function()
         wmFrame.Position = WM_DEFAULT_POS
         _Catalyst.Flags["_wmpos"] = _Catalyst.Config["_wmpos"].Default
         Window:Notify("Watermark", "Position reset.")
+    end)
+        sApi:Button("Reset Keybind List Position", "Move keybind list back to default position", function()
+        kbFrame.Position = KB_DEFAULT_POS
+        _Catalyst.Flags["_kbpos"] = _Catalyst.Config["_kbpos"].Default
+        Window:Notify("Keybinds", "Position reset.")
     end)
 
     sApi:Section("About")
