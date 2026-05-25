@@ -1,5 +1,5 @@
 local _Catalyst = {}
-_Catalyst.Version = "2.7"
+_Catalyst.Version = "2.9"
 _Catalyst.RainbowColorValue = 0
 _Catalyst.HueSelectionPosition = 0
 _Catalyst.Flags = {}
@@ -1732,7 +1732,9 @@ function _Catalyst:Window(opt)
                 end
             end
         end
-        if kbListEnabled then
+        if streamerMode then
+            kbFrame.Visible = isOpen and kbListEnabled and (#kbRows > 0)
+        else
             kbRefresh()
         end
     end
