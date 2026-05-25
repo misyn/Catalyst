@@ -1,5 +1,5 @@
 local _Catalyst = {}
-_Catalyst.Version = "2.8"
+_Catalyst.Version = "2.9"
 _Catalyst.RainbowColorValue = 0
 _Catalyst.HueSelectionPosition = 0
 _Catalyst.Flags = {}
@@ -1654,6 +1654,7 @@ function _Catalyst:Window(opt)
     local ToggleKey    = opt.ToggleKey or opt.CloseBind or Enum.KeyCode.RightAlt
     if opt.Accent then
         _Catalyst._customAccent = true
+        _Catalyst.Flags["_customaccent"] = true
         setAccent(opt.Accent)
     end
     if opt.Theme and Themes[opt.Theme] then applyTheme(opt.Theme) end
@@ -2396,7 +2397,7 @@ function _Catalyst:Window(opt)
             local t = os.date("*t")
             local dateStr = string.format("%02d/%02d/%04d %02d:%02d:%02d",
                 t.month, t.day, t.year, t.hour, t.min, t.sec)
-            wmSub.Text = getClientId() .. "  |  " .. dateStr
+            wmSub.Text = getClientId():sub(1, 8) .. "  |  " .. dateStr
             taskLib.wait(1)
         end
     end)
@@ -2407,8 +2408,8 @@ function _Catalyst:Window(opt)
 
     local kbFrame = Instance.new("Frame")
     kbFrame.Name = "_CatalystKeybinds"
-    kbFrame.AnchorPoint = Vector2.new(0, 0)
-    kbFrame.Position = UDim2.new(0, 14, 0, 14)
+    kbFrame.AnchorPoint = Vector2.new(0, 0.5)
+    kbFrame.Position = UDim2.new(0, 14, 0.5, 0)
     kbFrame.Size = UDim2.new(0, 210, 0, 30)
     kbFrame.AutomaticSize = Enum.AutomaticSize.Y
     kbFrame.BackgroundColor3 = Theme.Panel
@@ -2424,6 +2425,7 @@ function _Catalyst:Window(opt)
     kbHeader.Size = UDim2.new(1, 0, 0, 30)
     kbHeader.BackgroundColor3 = Theme.Header
     kbHeader.BorderSizePixel = 0
+    kbHeader.ClipsDescendants = true
     kbHeader.ZIndex = 101
     kbHeader.Parent = kbFrame
     corner(kbHeader, 8)
@@ -2899,14 +2901,27 @@ function _Catalyst:Window(opt)
             pcall(_Catalyst.Config["_theme"].Set, deserialize(data["_theme"]))
         end
         for flag, val in pairs(data) do
-            if flag ~= "_theme" and flag ~= "_accent" then
+            if flag ~= "_theme" and flag ~= "_accent" and flag ~= "_customaccent" then
                 local c = _Catalyst.Config[flag]
                 if c then pcall(c.Set, deserialize(val)) end
             end
         end
-        if data["_accent"] ~= nil and _Catalyst.Config["_accent"] then
+        local wantsCustom = data["_customaccent"] == true
+        if wantsCustom and data["_accent"] ~= nil and _Catalyst.Config["_accent"] then
             _Catalyst._customAccent = true
+            _Catalyst.Flags["_customaccent"] = true
             pcall(_Catalyst.Config["_accent"].Set, deserialize(data["_accent"]))
+        else
+            _Catalyst._customAccent = false
+            _Catalyst.Flags["_customaccent"] = false
+            local tn = _Catalyst.Flags["_theme"]
+            local tt = Themes[tn] or Theme
+            local themeAccent = tt.Accent or Theme.Accent
+            if _Catalyst.__accentSilent then
+                _Catalyst.__accentSilent(themeAccent)
+            end
+            _Catalyst._customAccent = false
+            setAccent(themeAccent)
         end
         writeMeta({ recent = name })
         applyAllVisuals()
@@ -2996,6 +3011,7 @@ function _Catalyst:Window(opt)
     sApi:Section("Appearance")
     sApi:Dropdown("UI Theme", { "GX", "Discord", "Light" }, function(v)
         _Catalyst._customAccent = false
+        _Catalyst.Flags["_customaccent"] = false
         applyTheme(v)
         if accentPicker and accentPicker.SetSilent then
             accentPicker.SetSilent(Theme.Accent)
@@ -3004,13 +3020,24 @@ function _Catalyst:Window(opt)
 
     accentPicker = sApi:Colorpicker("Accent Color", Theme.Accent, function(c)
         _Catalyst._customAccent = true
+        _Catalyst.Flags["_customaccent"] = true
         setAccent(c)
     end, "_accent")
+
+    _Catalyst.__accentSilent = accentPicker.SetSilent
+
+    _Catalyst.Config["_customaccent"] = {
+        Get     = function() return _Catalyst._customAccent and true or false end,
+        Set     = function(_) end,
+        Default = false,
+    }
+    _Catalyst.Flags["_customaccent"] = _Catalyst._customAccent and true or false
 
     do
         local origSet = _Catalyst.Config["_accent"].Set
         _Catalyst.Config["_accent"].Set = function(c)
             _Catalyst._customAccent = true
+            _Catalyst.Flags["_customaccent"] = true
             origSet(c)
         end
     end
