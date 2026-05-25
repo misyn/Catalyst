@@ -1,5 +1,5 @@
 local _Catalyst = {}
-_Catalyst.Version = "2.6"
+_Catalyst.Version = "2.8"
 _Catalyst.RainbowColorValue = 0
 _Catalyst.HueSelectionPosition = 0
 _Catalyst.Flags = {}
@@ -168,6 +168,12 @@ end
 local function roundTo(n, d)
     local m = 10 ^ (d or 0)
     return math.floor(n * m + 0.5) / m
+end
+
+local function keyNameOf(k)
+    if typeof(k) == "EnumItem" then return k.Name end
+    if type(k) == "string" then return k end
+    return "None"
 end
 
 local FileSystem = {}
@@ -377,6 +383,24 @@ local function makeAPI(scroll)
         end
     end
 
+    local searchItems = {}
+    local function register(frame, name, kind)
+        searchItems[#searchItems + 1] = {
+            frame = frame,
+            name = string.lower(tostring(name or "")),
+            section = currentSection,
+            kind = kind or "card",
+        }
+    end
+    local function registerSection(frame, sec, name)
+        searchItems[#searchItems + 1] = {
+            frame = frame,
+            name = string.lower(tostring(name or "")),
+            sec = sec,
+            kind = "section",
+        }
+    end
+
     local function newCard(h)
         local f = Instance.new("Frame")
         f.Size = UDim2.new(1, 0, 0, h)
@@ -446,6 +470,40 @@ local function makeAPI(scroll)
     end
 
     local api = {}
+
+    function api.__search(query)
+        query = string.lower(tostring(query or ""))
+        local searching = query ~= ""
+        for _, it in ipairs(searchItems) do
+            if it.kind == "section" then it.sec.__match = false end
+        end
+        for _, it in ipairs(searchItems) do
+            if it.kind == "card" then
+                if searching then
+                    local hit = string.find(it.name, query, 1, true) ~= nil
+                    it.frame.Visible = hit
+                    if hit and it.section then it.section.__match = true end
+                else
+                    it.frame.Visible = (not it.section) or (not it.section.collapsed)
+                end
+            elseif it.kind == "line" then
+                if searching then
+                    it.frame.Visible = false
+                else
+                    it.frame.Visible = (not it.section) or (not it.section.collapsed)
+                end
+            end
+        end
+        for _, it in ipairs(searchItems) do
+            if it.kind == "section" then
+                if searching then
+                    it.frame.Visible = it.sec.__match == true
+                else
+                    it.frame.Visible = true
+                end
+            end
+        end
+    end
 
     function api:Section(text)
         local sec = { members = {}, collapsed = false }
@@ -519,6 +577,7 @@ local function makeAPI(scroll)
         }
         _Catalyst.Flags[secFlag] = false
 
+        registerSection(f, sec, text)
         currentSection = sec
         return {
             Collapse = function() setCollapsed(true) end,
@@ -541,6 +600,7 @@ local function makeAPI(scroll)
         l.TextWrapped = true
         l.TextXAlignment = Enum.TextXAlignment.Left
         l.Parent = card
+        register(card, text, "card")
         return { Set = function(t) l.Text = t end }
     end
 
@@ -552,12 +612,14 @@ local function makeAPI(scroll)
         f.LayoutOrder = nextOrder()
         f.Parent = scroll
         track(f)
+        register(f, "", "line")
     end
 
     function api:Button(text, desc, callback)
         callback = callback or function() end
         local hasDesc = desc and desc ~= ""
         local card = newCard(hasDesc and 62 or 38)
+        register(card, text, "card")
         local title = makeTitle(card, text, hasDesc and 8 or 0, -52)
         if not hasDesc then title.Size = UDim2.new(1, -52, 1, 0) end
         if hasDesc then makeDesc(card, desc, 27) end
@@ -590,6 +652,7 @@ local function makeAPI(scroll)
         local hasDesc = desc and desc ~= ""
         local kbKey = opts.Keybind and keyName(opts.Keybind) or nil
         local card = newCard(hasDesc and 62 or 38)
+        register(card, text, "card")
         local titleReserve = kbKey and -120 or -64
         local title = makeTitle(card, text, hasDesc and 8 or 0, titleReserve)
         if not hasDesc then title.Size = UDim2.new(1, titleReserve, 1, 0) end
@@ -616,6 +679,7 @@ local function makeAPI(scroll)
         corner(knob, 8)
 
         local state = default and true or false
+        local toggleKbEntry
 
         local function apply(v, fire)
             state = v and true or false
@@ -623,6 +687,7 @@ local function makeAPI(scroll)
             tween(pill, 0.18, { BackgroundColor3 = state and Theme.Accent or Theme.Stroke })
             knob.BackgroundColor3 = Theme.Text
             if flag then _Catalyst.Flags[flag] = state end
+            if toggleKbEntry then toggleKbEntry:SetActive(state) end
             if fire then pcall(callback, state) end
         end
 
@@ -641,6 +706,10 @@ local function makeAPI(scroll)
         end)
 
         if kbKey then
+            if _Catalyst.__kbAdd then
+                toggleKbEntry = _Catalyst.__kbAdd(text, opts.Keybind)
+            end
+
             local chip = Instance.new("Frame")
             chip.AnchorPoint = Vector2.new(1, 0.5)
             chip.Position = UDim2.new(1, -62, cY[1], cY[2])
@@ -675,6 +744,7 @@ local function makeAPI(scroll)
                 kbKey = keyName(k)
                 chipLbl.Text = kbKey
                 chipLbl.TextColor3 = Theme.SubText
+                if toggleKbEntry then toggleKbEntry:SetKey(k) end
                 if flag then _Catalyst.Flags[flag .. "Key"] = kbKey end
             end
 
@@ -734,6 +804,7 @@ local function makeAPI(scroll)
         local suffix   = opts.Suffix or ""
         local hasDesc  = desc and desc ~= ""
         local card = newCard(hasDesc and 84 or 52)
+        register(card, text, "card")
 
         local function fmt(n)
             local v
@@ -832,6 +903,7 @@ local function makeAPI(scroll)
         list = list or {}
         callback = callback or function() end
         local card = newCard(38)
+        register(card, text, "card")
         card.ClipsDescendants = true
 
         local title = Instance.new("TextLabel")
@@ -962,6 +1034,7 @@ local function makeAPI(scroll)
         list = list or {}
         callback = callback or function() end
         local card = newCard(38)
+        register(card, text, "card")
         card.ClipsDescendants = true
 
         local title = Instance.new("TextLabel")
@@ -1184,6 +1257,7 @@ local function makeAPI(scroll)
         default = default or Theme.Accent
         callback = callback or function() end
         local card = newCard(38)
+        register(card, text, "card")
         card.ClipsDescendants = true
         local title = makeTitle(card, text, 0, -64)
         title.Size = UDim2.new(1, -64, 0, 38)
@@ -1356,11 +1430,17 @@ local function makeAPI(scroll)
         opts = opts or {}
         local mode = opts.Mode or "Press"
         local card = newCard(38)
+        register(card, text, "card")
         local title = makeTitle(card, text, 0, -104)
         title.Size = UDim2.new(1, -104, 1, 0)
 
         local key = keyName(defaultKey)
         local bstate = false
+
+        local kbEntry
+        if _Catalyst.__kbAdd and not opts.NoList then
+            kbEntry = _Catalyst.__kbAdd(text, defaultKey)
+        end
 
         local modeLbl = Instance.new("TextLabel")
         modeLbl.BackgroundTransparency = 1
@@ -1433,6 +1513,7 @@ local function makeAPI(scroll)
             key = keyName(k)
             keyLbl.Text = key
             if not active then keyLbl.TextColor3 = Theme.SubText end
+            if kbEntry then kbEntry:SetKey(k) end
             if flag then _Catalyst.Flags[flag] = key end
         end
 
@@ -1457,16 +1538,20 @@ local function makeAPI(scroll)
             if i.KeyCode ~= Enum.KeyCode.Unknown and i.KeyCode.Name == key then
                 if mode == "Hold" then
                     bindFlashOn()
+                    if kbEntry then kbEntry:SetActive(true) end
                     pcall(callback, true)
                 elseif mode == "Toggle" then
                     bstate = not bstate
                     if bstate then bindFlashOn() else bindFlashOff() end
+                    if kbEntry then kbEntry:SetActive(bstate) end
                     pcall(callback, bstate)
                 else
                     bindFlashOn()
+                    if kbEntry then kbEntry:SetActive(true) end
                     taskLib.spawn(function()
                         taskLib.wait(0.16)
                         bindFlashOff()
+                        if kbEntry then kbEntry:SetActive(false) end
                     end)
                     pcall(callback)
                 end
@@ -1477,6 +1562,7 @@ local function makeAPI(scroll)
                 if not alive() then return end
                 if i.KeyCode ~= Enum.KeyCode.Unknown and i.KeyCode.Name == key then
                     bindFlashOff()
+                    if kbEntry then kbEntry:SetActive(false) end
                     pcall(callback, false)
                 end
             end)
@@ -1501,6 +1587,7 @@ local function makeAPI(scroll)
         callback = callback or function() end
         local hasDesc = desc and desc ~= ""
         local card = newCard(hasDesc and 88 or 66)
+        register(card, text, "card")
         makeTitle(card, text, 8, -24)
         if hasDesc then
             local d = makeDesc(card, desc, 26)
@@ -1629,8 +1716,6 @@ function _Catalyst:Window(opt)
             MainFrame.Visible = true
             local tw = tween(uiScale, 0.26, { Scale = targetScale() }, Enum.EasingStyle.Quart)
             tw.Completed:Connect(function() toggleBusy = false end)
-            if wmVisible and not streamerMode then
-            end
         else
             local tw = tween(uiScale, 0.24, { Scale = 0 }, Enum.EasingStyle.Quart)
             tw.Completed:Connect(function()
@@ -1707,13 +1792,16 @@ function _Catalyst:Window(opt)
     local contentPanel  = makePanel(Title)
     local settingsPanel = makePanel("SETTINGS")
 
+    local currentTabApi
+    local searchBox
+
     do
-        contentPanel.title.Size = UDim2.new(1, -44, 0, 18)
+        contentPanel.title.Size = UDim2.new(1, -210, 0, 18)
         contentPanel.title.Position = UDim2.new(0, 28, 0, 4)
         local sub = Instance.new("TextLabel")
         sub.BackgroundTransparency = 1
         sub.Position = UDim2.new(0, 28, 0, 17)
-        sub.Size = UDim2.new(1, -44, 0, 12)
+        sub.Size = UDim2.new(1, -210, 0, 12)
         sub.Font = Enum.Font.Gotham
         sub.Text = SubTitle
         sub.TextColor3 = Theme.SubText
@@ -1721,6 +1809,71 @@ function _Catalyst:Window(opt)
         sub.TextXAlignment = Enum.TextXAlignment.Left
         sub.TextTruncate = Enum.TextTruncate.AtEnd
         sub.Parent = contentPanel.header
+
+        local searchFrame = Instance.new("Frame")
+        searchFrame.AnchorPoint = Vector2.new(1, 0.5)
+        searchFrame.Position = UDim2.new(1, -10, 0.5, 0)
+        searchFrame.Size = UDim2.new(0, 176, 0, 24)
+        searchFrame.BackgroundColor3 = Theme.Element
+        searchFrame.BorderSizePixel = 0
+        searchFrame.Parent = contentPanel.header
+        corner(searchFrame, 5)
+        local searchStroke = stroke(searchFrame, Theme.Stroke, 1, 0)
+
+        local searchDot = Instance.new("Frame")
+        searchDot.AnchorPoint = Vector2.new(0, 0.5)
+        searchDot.Position = UDim2.new(0, 9, 0.5, -1)
+        searchDot.Size = UDim2.new(0, 8, 0, 8)
+        searchDot.BackgroundTransparency = 1
+        searchDot.BorderSizePixel = 0
+        searchDot.Parent = searchFrame
+        corner(searchDot, 4)
+        local searchRing = stroke(searchDot, Theme.SubText, 1.4, 0)
+
+        local searchHandle = Instance.new("Frame")
+        searchHandle.AnchorPoint = Vector2.new(0.5, 0.5)
+        searchHandle.Position = UDim2.new(1, 1, 1, 1)
+        searchHandle.Size = UDim2.new(0, 4, 0, 1.4)
+        searchHandle.Rotation = 45
+        searchHandle.BackgroundColor3 = Theme.SubText
+        searchHandle.BorderSizePixel = 0
+        searchHandle.Parent = searchDot
+
+        searchBox = Instance.new("TextBox")
+        searchBox.BackgroundTransparency = 1
+        searchBox.Position = UDim2.new(0, 24, 0, 0)
+        searchBox.Size = UDim2.new(1, -32, 1, 0)
+        searchBox.Font = Enum.Font.Gotham
+        searchBox.PlaceholderText = "Search this tab..."
+        searchBox.Text = ""
+        searchBox.TextColor3 = Theme.Text
+        searchBox.PlaceholderColor3 = Theme.SubText
+        searchBox.TextSize = 12
+        searchBox.ClearTextOnFocus = false
+        searchBox.TextXAlignment = Enum.TextXAlignment.Left
+        searchBox.TextTruncate = Enum.TextTruncate.AtEnd
+        searchBox.Parent = searchFrame
+
+        searchBox.Focused:Connect(function()
+            tween(searchStroke, 0.15, { Color = Theme.Accent })
+        end)
+        searchBox.FocusLost:Connect(function()
+            tween(searchStroke, 0.15, { Color = Theme.Stroke })
+        end)
+        searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+            if currentTabApi and currentTabApi.__search then
+                currentTabApi.__search(searchBox.Text)
+            end
+        end)
+
+        onTheme(function()
+            searchFrame.BackgroundColor3 = Theme.Element
+            searchBox.TextColor3 = Theme.Text
+            searchBox.PlaceholderColor3 = Theme.SubText
+            searchRing.Color = Theme.SubText
+            searchHandle.BackgroundColor3 = Theme.SubText
+            searchStroke.Color = Theme.Stroke
+        end)
     end
 
     local panels = {
@@ -2248,6 +2401,202 @@ function _Catalyst:Window(opt)
         end
     end)
 
+    -- Keybind List (ported from Nexonix)
+    local kbListEnabled = true
+    local kbRows = {}
+
+    local kbFrame = Instance.new("Frame")
+    kbFrame.Name = "_CatalystKeybinds"
+    kbFrame.AnchorPoint = Vector2.new(0, 0)
+    kbFrame.Position = UDim2.new(0, 14, 0, 14)
+    kbFrame.Size = UDim2.new(0, 210, 0, 30)
+    kbFrame.AutomaticSize = Enum.AutomaticSize.Y
+    kbFrame.BackgroundColor3 = Theme.Panel
+    kbFrame.BorderSizePixel = 0
+    kbFrame.Active = true
+    kbFrame.Visible = false
+    kbFrame.ZIndex = 100
+    kbFrame.Parent = ScreenGui
+    corner(kbFrame, 8)
+    local kbStroke = stroke(kbFrame, Theme.Stroke, 1, 0.4)
+
+    local kbHeader = Instance.new("Frame")
+    kbHeader.Size = UDim2.new(1, 0, 0, 30)
+    kbHeader.BackgroundColor3 = Theme.Header
+    kbHeader.BorderSizePixel = 0
+    kbHeader.ZIndex = 101
+    kbHeader.Parent = kbFrame
+    corner(kbHeader, 8)
+
+    local kbHeaderFix = Instance.new("Frame")
+    kbHeaderFix.Size = UDim2.new(1, 0, 0, 8)
+    kbHeaderFix.Position = UDim2.new(0, 0, 1, -8)
+    kbHeaderFix.BackgroundColor3 = Theme.Header
+    kbHeaderFix.BorderSizePixel = 0
+    kbHeaderFix.ZIndex = 101
+    kbHeaderFix.Parent = kbHeader
+
+    local kbAccent = Instance.new("Frame")
+    kbAccent.Size = UDim2.new(1, 0, 0, 2)
+    kbAccent.BackgroundColor3 = Theme.Accent
+    kbAccent.BorderSizePixel = 0
+    kbAccent.ZIndex = 102
+    kbAccent.Parent = kbHeader
+    regAccent(kbAccent, "BackgroundColor3")
+
+    local kbTitle = Instance.new("TextLabel")
+    kbTitle.BackgroundTransparency = 1
+    kbTitle.Position = UDim2.new(0, 12, 0, 0)
+    kbTitle.Size = UDim2.new(1, -24, 1, 0)
+    kbTitle.Font = Enum.Font.GothamBold
+    kbTitle.Text = "KEYBINDS"
+    kbTitle.TextColor3 = Theme.Text
+    kbTitle.TextSize = 12
+    kbTitle.TextXAlignment = Enum.TextXAlignment.Left
+    kbTitle.ZIndex = 102
+    kbTitle.Parent = kbHeader
+
+    local kbBody = Instance.new("Frame")
+    kbBody.Position = UDim2.new(0, 0, 0, 30)
+    kbBody.Size = UDim2.new(1, 0, 0, 0)
+    kbBody.AutomaticSize = Enum.AutomaticSize.Y
+    kbBody.BackgroundTransparency = 1
+    kbBody.ZIndex = 101
+    kbBody.Parent = kbFrame
+
+    local kbList = Instance.new("UIListLayout")
+    kbList.SortOrder = Enum.SortOrder.LayoutOrder
+    kbList.Padding = UDim.new(0, 4)
+    kbList.Parent = kbBody
+
+    local kbPad = Instance.new("UIPadding")
+    kbPad.PaddingTop = UDim.new(0, 8)
+    kbPad.PaddingBottom = UDim.new(0, 10)
+    kbPad.PaddingLeft = UDim.new(0, 12)
+    kbPad.PaddingRight = UDim.new(0, 12)
+    kbPad.Parent = kbBody
+
+    onTheme(function()
+        kbFrame.BackgroundColor3 = Theme.Panel
+        kbHeader.BackgroundColor3 = Theme.Header
+        kbHeaderFix.BackgroundColor3 = Theme.Header
+        kbTitle.TextColor3 = Theme.Text
+        kbStroke.Color = Theme.Stroke
+    end)
+
+    do
+        local dragging, si, sp = false, nil, nil
+        kbFrame.InputBegan:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.MouseButton1
+            or i.UserInputType == Enum.UserInputType.Touch then
+                dragging, si, sp = true, i.Position, kbFrame.Position
+            end
+        end)
+        kbFrame.InputEnded:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.MouseButton1
+            or i.UserInputType == Enum.UserInputType.Touch then
+                dragging = false
+            end
+        end)
+        UserInputService.InputChanged:Connect(function(i)
+            if not alive() then return end
+            if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement
+            or i.UserInputType == Enum.UserInputType.Touch) then
+                local d = i.Position - si
+                kbFrame.Position = UDim2.new(
+                    sp.X.Scale, sp.X.Offset + d.X,
+                    sp.Y.Scale, sp.Y.Offset + d.Y
+                )
+            end
+        end)
+    end
+
+    local function kbRefresh()
+        kbFrame.Visible = kbListEnabled and (#kbRows > 0)
+    end
+
+    local function keybindAdd(name, key)
+        local row = Instance.new("Frame")
+        row.Size = UDim2.new(1, 0, 0, 22)
+        row.BackgroundTransparency = 1
+        row.ZIndex = 101
+        row.Parent = kbBody
+
+        local dot = Instance.new("Frame")
+        dot.AnchorPoint = Vector2.new(0, 0.5)
+        dot.Position = UDim2.new(0, 0, 0.5, 0)
+        dot.Size = UDim2.new(0, 7, 0, 7)
+        dot.BackgroundColor3 = Theme.SubText
+        dot.BorderSizePixel = 0
+        dot.ZIndex = 102
+        dot.Parent = row
+        corner(dot, 4)
+
+        local nameLbl = Instance.new("TextLabel")
+        nameLbl.BackgroundTransparency = 1
+        nameLbl.Position = UDim2.new(0, 16, 0, 0)
+        nameLbl.Size = UDim2.new(1, -86, 1, 0)
+        nameLbl.Font = Enum.Font.GothamMedium
+        nameLbl.Text = tostring(name)
+        nameLbl.TextColor3 = Theme.SubText
+        nameLbl.TextSize = 12
+        nameLbl.TextXAlignment = Enum.TextXAlignment.Left
+        nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
+        nameLbl.ZIndex = 102
+        nameLbl.Parent = row
+
+        local keyLbl = Instance.new("TextLabel")
+        keyLbl.BackgroundTransparency = 1
+        keyLbl.AnchorPoint = Vector2.new(1, 0.5)
+        keyLbl.Position = UDim2.new(1, 0, 0.5, 0)
+        keyLbl.Size = UDim2.new(0, 66, 1, 0)
+        keyLbl.Font = Enum.Font.GothamBold
+        keyLbl.Text = keyNameOf(key)
+        keyLbl.TextColor3 = Theme.SubText
+        keyLbl.TextSize = 12
+        keyLbl.TextXAlignment = Enum.TextXAlignment.Right
+        keyLbl.TextTruncate = Enum.TextTruncate.AtEnd
+        keyLbl.ZIndex = 102
+        keyLbl.Parent = row
+
+        kbRows[#kbRows + 1] = row
+
+        local entry = { active = false }
+        function entry:SetActive(on)
+            entry.active = on and true or false
+            tween(dot, 0.15, { BackgroundColor3 = entry.active and Theme.Accent or Theme.SubText })
+            tween(nameLbl, 0.15, { TextColor3 = entry.active and Theme.Text or Theme.SubText })
+            tween(keyLbl, 0.15, { TextColor3 = entry.active and Theme.Text or Theme.SubText })
+        end
+        function entry:SetKey(k) keyLbl.Text = keyNameOf(k) end
+        function entry:SetName(n) nameLbl.Text = tostring(n) end
+        function entry:Remove()
+            for i, r in ipairs(kbRows) do
+                if r == row then table.remove(kbRows, i) break end
+            end
+            row:Destroy()
+            kbRefresh()
+        end
+
+        onAccent(function(c)
+            if entry.active then dot.BackgroundColor3 = c end
+        end)
+        onTheme(function()
+            dot.BackgroundColor3 = entry.active and Theme.Accent or Theme.SubText
+            nameLbl.TextColor3 = entry.active and Theme.Text or Theme.SubText
+            keyLbl.TextColor3 = entry.active and Theme.Text or Theme.SubText
+        end)
+
+        kbRefresh()
+        return entry
+    end
+    _Catalyst.__kbAdd = keybindAdd
+
+    local function setKeybindListVisible(v)
+        kbListEnabled = v and true or false
+        kbRefresh()
+    end
+
     local firstTab = true
     function Window:Tab(name, icon)
         local container = Instance.new("ScrollingFrame")
@@ -2304,7 +2653,7 @@ function _Catalyst:Window(opt)
         lbl.TextTruncate = Enum.TextTruncate.AtEnd
         lbl.Parent = btn
 
-        local entry = { container = container, btn = btn, lbl = lbl, indicator = indicator, icon = ic }
+        local entry = { container = container, btn = btn, lbl = lbl, indicator = indicator, icon = ic, capi = capi }
 
         local function activate()
             for _, t in ipairs(tabs) do
@@ -2313,12 +2662,15 @@ function _Catalyst:Window(opt)
                 tween(t.lbl, 0.18, { TextColor3 = Theme.SubText })
                 tween(t.indicator, 0.18, { BackgroundTransparency = 1 })
                 if t.icon then tween(t.icon, 0.18, { ImageColor3 = Theme.SubText }) end
+                if t.capi and t.capi.__search then t.capi.__search("") end
             end
             container.Visible = true
             tween(btn, 0.18, { BackgroundTransparency = 0 })
             tween(lbl, 0.18, { TextColor3 = Theme.Text })
             tween(indicator, 0.18, { BackgroundTransparency = 0 })
             if ic then tween(ic, 0.18, { ImageColor3 = Theme.Accent }) end
+            currentTabApi = capi
+            if searchBox then searchBox.Text = "" end
         end
         entry.activate = activate
         onAccent(function(c)
@@ -2367,67 +2719,116 @@ function _Catalyst:Window(opt)
     nLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
     nLayout.Parent = notifyHolder
 
-    function Window:Notify(title, desc, duration)
-        duration = duration or 4
+    -- Notification (ported from Nexonix: live countdown + draining progress bar)
+    function Window:Notify(title, desc, duration, color)
+        duration = tonumber(duration) or 4
+        color = color or Theme.Accent
+        local hasDesc = desc ~= nil and desc ~= ""
+        local H = hasDesc and 84 or 50
+
         local card = Instance.new("Frame")
-        card.Size = UDim2.new(0, 290, 0, 64)
+        card.Size = UDim2.new(0, 0, 0, H)
         card.BackgroundColor3 = Theme.Panel
         card.BackgroundTransparency = 1
         card.BorderSizePixel = 0
+        card.ClipsDescendants = true
         card.Parent = notifyHolder
         corner(card, 8)
         local st = stroke(card, Theme.Stroke, 1, 1)
 
+        local titleLbl = Instance.new("TextLabel")
+        titleLbl.BackgroundTransparency = 1
+        titleLbl.Position = UDim2.new(0, 14, 0, 10)
+        titleLbl.Size = UDim2.new(1, -64, 0, 18)
+        titleLbl.Font = Enum.Font.GothamBold
+        titleLbl.Text = title or "Notice"
+        titleLbl.TextColor3 = Theme.Text
+        titleLbl.TextTransparency = 1
+        titleLbl.TextSize = 14
+        titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+        titleLbl.TextTruncate = Enum.TextTruncate.AtEnd
+        titleLbl.Parent = card
+
+        local durLbl = Instance.new("TextLabel")
+        durLbl.BackgroundTransparency = 1
+        durLbl.AnchorPoint = Vector2.new(1, 0)
+        durLbl.Position = UDim2.new(1, -14, 0, 10)
+        durLbl.Size = UDim2.new(0, 44, 0, 18)
+        durLbl.Font = Enum.Font.GothamMedium
+        durLbl.Text = string.format("%.1fs", duration)
+        durLbl.TextColor3 = Theme.SubText
+        durLbl.TextTransparency = 1
+        durLbl.TextSize = 12
+        durLbl.TextXAlignment = Enum.TextXAlignment.Right
+        durLbl.Parent = card
+
+        local descLbl
+        if hasDesc then
+            descLbl = Instance.new("TextLabel")
+            descLbl.BackgroundTransparency = 1
+            descLbl.Position = UDim2.new(0, 14, 0, 30)
+            descLbl.Size = UDim2.new(1, -28, 0, 32)
+            descLbl.Font = Enum.Font.Gotham
+            descLbl.Text = desc
+            descLbl.TextColor3 = Theme.SubText
+            descLbl.TextTransparency = 1
+            descLbl.TextSize = 12
+            descLbl.TextWrapped = true
+            descLbl.TextXAlignment = Enum.TextXAlignment.Left
+            descLbl.TextYAlignment = Enum.TextYAlignment.Top
+            descLbl.TextTruncate = Enum.TextTruncate.AtEnd
+            descLbl.Parent = card
+        end
+
+        local barBG = Instance.new("Frame")
+        barBG.AnchorPoint = Vector2.new(0, 1)
+        barBG.Position = UDim2.new(0, 14, 1, -10)
+        barBG.Size = UDim2.new(1, -28, 0, 4)
+        barBG.BackgroundColor3 = Theme.Element
+        barBG.BackgroundTransparency = 1
+        barBG.BorderSizePixel = 0
+        barBG.Parent = card
+        corner(barBG, 2)
+
         local bar = Instance.new("Frame")
-        bar.Size = UDim2.new(0, 4, 1, -12)
-        bar.Position = UDim2.new(0, 6, 0, 6)
-        bar.BorderSizePixel = 0
+        bar.Size = UDim2.new(1, 0, 1, 0)
+        bar.BackgroundColor3 = color
         bar.BackgroundTransparency = 1
-        bar.BackgroundColor3 = Theme.Accent
-        bar.Parent = card
+        bar.BorderSizePixel = 0
+        bar.Parent = barBG
         corner(bar, 2)
-        regAccent(bar, "BackgroundColor3")
 
-        local t = Instance.new("TextLabel")
-        t.BackgroundTransparency = 1
-        t.Position = UDim2.new(0, 18, 0, 9)
-        t.Size = UDim2.new(1, -28, 0, 18)
-        t.Font = Enum.Font.GothamBold
-        t.Text = title or "Notice"
-        t.TextColor3 = Theme.Text
-        t.TextTransparency = 1
-        t.TextSize = 14
-        t.TextXAlignment = Enum.TextXAlignment.Left
-        t.TextTruncate = Enum.TextTruncate.AtEnd
-        t.Parent = card
+        tween(card, 0.3, { Size = UDim2.new(0, 290, 0, H), BackgroundTransparency = 0 }, Enum.EasingStyle.Quart)
+        tween(st, 0.3, { Transparency = 0.4 })
+        tween(titleLbl, 0.3, { TextTransparency = 0 })
+        tween(durLbl, 0.3, { TextTransparency = 0 })
+        if descLbl then tween(descLbl, 0.3, { TextTransparency = 0.1 }) end
+        tween(barBG, 0.3, { BackgroundTransparency = 0 })
+        tween(bar, 0.3, { BackgroundTransparency = 0 })
 
-        local d = Instance.new("TextLabel")
-        d.BackgroundTransparency = 1
-        d.Position = UDim2.new(0, 18, 0, 28)
-        d.Size = UDim2.new(1, -28, 0, 30)
-        d.Font = Enum.Font.Gotham
-        d.Text = desc or ""
-        d.TextColor3 = Theme.SubText
-        d.TextTransparency = 1
-        d.TextSize = 12
-        d.TextWrapped = true
-        d.TextTruncate = Enum.TextTruncate.AtEnd
-        d.TextXAlignment = Enum.TextXAlignment.Left
-        d.TextYAlignment = Enum.TextYAlignment.Top
-        d.Parent = card
-
-        tween(card, 0.25, { BackgroundTransparency = 0 })
-        tween(st, 0.25, { Transparency = 0.4 })
-        tween(t, 0.25, { TextTransparency = 0 })
-        tween(d, 0.25, { TextTransparency = 0.2 })
-        tween(bar, 0.25, { BackgroundTransparency = 0 })
+        tween(bar, duration, { Size = UDim2.new(0, 0, 1, 0) }, Enum.EasingStyle.Linear)
 
         taskLib.spawn(function()
-            taskLib.wait(duration)
-            tween(card, 0.25, { BackgroundTransparency = 1 })
+            local remaining = duration
+            while remaining > 0 and card.Parent do
+                taskLib.wait(0.1)
+                remaining = remaining - 0.1
+                if remaining < 0 then remaining = 0 end
+                if durLbl.Parent then
+                    durLbl.Text = string.format("%.1fs", remaining)
+                end
+            end
+        end)
+
+        taskLib.spawn(function()
+            taskLib.wait(duration + 0.05)
+            if not card.Parent then return end
+            tween(card, 0.25, { Size = UDim2.new(0, 0, 0, H), BackgroundTransparency = 1 })
             tween(st, 0.25, { Transparency = 1 })
-            tween(t, 0.25, { TextTransparency = 1 })
-            tween(d, 0.25, { TextTransparency = 1 })
+            tween(titleLbl, 0.25, { TextTransparency = 1 })
+            tween(durLbl, 0.25, { TextTransparency = 1 })
+            if descLbl then tween(descLbl, 0.25, { TextTransparency = 1 }) end
+            tween(barBG, 0.25, { BackgroundTransparency = 1 })
             tween(bar, 0.25, { BackgroundTransparency = 1 })
             taskLib.wait(0.3)
             card:Destroy()
@@ -2620,7 +3021,12 @@ function _Catalyst:Window(opt)
     end, "_uiscale", { Suffix = " %" })
     sApi:Bind("Toggle UI Key", ToggleKey, function()
         toggleUI()
-    end, "_togglekey")
+    end, "_togglekey", { NoList = true })
+
+    sApi:Section("Keybind List")
+    sApi:Toggle("Show Keybind List", "Display active keybinds on screen", true, function(on)
+        setKeybindListVisible(on)
+    end, "_kblist")
 
     sApi:Section("Watermark")
     sApi:Toggle("Show Watermark", "Display the watermark overlay", true, function(on)
@@ -2759,14 +3165,15 @@ function _Catalyst:Window(opt)
         if alive() and not didInit then Window:Init() end
     end)
 
-    Window.SetAccent         = setAccent
-    Window.SetTheme          = applyTheme
-    Window.Toggle            = toggleUI
-    Window.Relayout          = function() relayout(true) end
-    Window.SetWatermarkName  = setWatermarkName
-    Window.SetWatermarkImage = setWatermarkImage
+    Window.SetAccent           = setAccent
+    Window.SetTheme            = applyTheme
+    Window.Toggle              = toggleUI
+    Window.Relayout            = function() relayout(true) end
+    Window.SetWatermarkName    = setWatermarkName
+    Window.SetWatermarkImage   = setWatermarkImage
     Window.SetWatermarkVisible = setWatermarkVisible
-    Window.RefreshVisuals    = function() applyAllVisuals() end
+    Window.SetKeybindListVisible = setKeybindListVisible
+    Window.RefreshVisuals      = function() applyAllVisuals() end
 
     relayout(false)
     computeFit()
