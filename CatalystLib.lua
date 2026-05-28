@@ -42,6 +42,8 @@ local Theme = {
 }
 _Catalyst.Theme = Theme
 
+local BUILTIN_THEMES = { GX = true, Discord = true, Light = true }
+
 local Themes = {
     GX = {
         Window  = Color3.fromRGB(18, 18, 21),
@@ -79,39 +81,55 @@ local Themes = {
 }
 _Catalyst.Themes = Themes
 
--- Global font and padding state (applied to all new/existing text elements via listeners)
-local GlobalFont    = Enum.Font.GothamMedium
-local GlobalPadding = 6  -- px, used for card inner padding
+-- ── GLOBAL FONT ──────────────────────────────────────────────────────────────
+-- We keep a single "bold font" companion so bold labels stay bold in their family.
+local GlobalFont     = Enum.Font.GothamMedium
+local GlobalFontBold = Enum.Font.GothamBold  -- updated together
 
-local FontListeners    = {}
-local PaddingListeners = {}
-
-local function onFont(fn)    FontListeners[#FontListeners + 1] = fn end
-local function onPadding(fn) PaddingListeners[#PaddingListeners + 1] = fn end
-
-local function setGlobalFont(fontEnum)
-    GlobalFont = fontEnum
-    for _, fn in ipairs(FontListeners) do pcall(fn, fontEnum) end
+-- Bold-friend lookup: given a font name return the bold variant if it exists.
+local function boldVariant(fe)
+    local name = fe.Name
+    -- already bold
+    if name:find("Bold") then return fe end
+    local try = name .. "Bold"
+    local ok, b = pcall(function() return Enum.Font[try] end)
+    return (ok and b) and b or fe
 end
 
-local function setGlobalPadding(px)
+-- Fonts that should stay structurally bold (panel headers, section titles etc.)
+-- We tag them with a special attribute so the sweep can find them.
+local BOLD_TAG = "_CatalystBold"
+
+local function tagBold(obj)
+    pcall(function() obj:SetAttribute(BOLD_TAG, true) end)
+end
+
+-- ── GLOBAL PADDING ────────────────────────────────────────────────────────────
+-- We track every UIListLayout that separates cards so we can adjust spacing.
+local GlobalPadding    = 6   -- card gap / layout padding in px (2–16)
+local LayoutRefs       = {}  -- { layout = UIListLayout } entries
+
+local function regLayout(layoutObj)
+    LayoutRefs[#LayoutRefs + 1] = layoutObj
+end
+
+local function applyGlobalPadding(px)
     GlobalPadding = px
-    for _, fn in ipairs(PaddingListeners) do pcall(fn, px) end
+    local ud = UDim.new(0, px)
+    for _, lo in ipairs(LayoutRefs) do
+        pcall(function() lo.Padding = ud end)
+    end
 end
 
 local FONT_OPTIONS = {
-    "GothamMedium",
-    "Gotham",
-    "GothamBold",
-    "SourceSans",
-    "SourceSansBold",
-    "RobotoMono",
-    "Code",
-    "Arial",
-    "ArialBold",
-    "Ubuntu",
-    "Nunito",
+    "GothamMedium", "Gotham", "GothamBold",
+    "SourceSans", "SourceSansBold",
+    "RobotoMono", "Code",
+    "Arial", "ArialBold",
+    "Ubuntu", "Nunito",
 }
+
+local THEME_ASPECTS = { "Window", "Panel", "Header", "Element", "Hover", "Stroke", "Text", "SubText" }
 
 local AccentObjects   = {}
 local AccentListeners = {}
@@ -122,23 +140,15 @@ local function regAccent(obj, prop)
     obj[prop] = Theme.Accent
     return obj
 end
-local function onAccent(fn)
-    AccentListeners[#AccentListeners + 1] = fn
-end
-local function onTheme(fn)
-    ThemeListeners[#ThemeListeners + 1] = fn
-end
+local function onAccent(fn) AccentListeners[#AccentListeners + 1] = fn end
+local function onTheme(fn)  ThemeListeners[#ThemeListeners + 1] = fn end
 
 local function setAccent(c)
     Theme.Accent = c
     for _, e in ipairs(AccentObjects) do
-        if e.obj then
-            pcall(function() e.obj[e.prop] = c end)
-        end
+        if e.obj then pcall(function() e.obj[e.prop] = c end) end
     end
-    for _, fn in ipairs(AccentListeners) do
-        pcall(fn, c)
-    end
+    for _, fn in ipairs(AccentListeners) do pcall(fn, c) end
 end
 
 local function corner(o, r)
@@ -180,8 +190,7 @@ local function bindDrag(target, onMove)
     target.InputBegan:Connect(function(i)
         if i.UserInputType == Enum.UserInputType.MouseButton1
         or i.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            onMove(i.Position)
+            dragging = true; onMove(i.Position)
         end
     end)
     target.InputEnded:Connect(function(i)
@@ -221,38 +230,24 @@ do
     end
     function FileSystem.read(path)
         if hasIO then
-            local r
-            pcall(function() r = readfile(path) end)
-            return r
-        else
-            return mem[path]
-        end
+            local r; pcall(function() r = readfile(path) end); return r
+        else return mem[path] end
     end
     function FileSystem.exists(path)
         if hasIO then
-            local r = false
-            pcall(function() r = isfile(path) end)
-            return r
-        else
-            return mem[path] ~= nil
-        end
+            local r = false; pcall(function() r = isfile(path) end); return r
+        else return mem[path] ~= nil end
     end
     function FileSystem.delete(path)
-        if hasIO and typeof(delfile) == "function" then
-            pcall(delfile, path)
-        else
-            mem[path] = nil
-        end
+        if hasIO and typeof(delfile) == "function" then pcall(delfile, path)
+        else mem[path] = nil end
     end
     function FileSystem.list(folder)
         local out = {}
         if hasIO and typeof(listfiles) == "function" then
-            local files
-            pcall(function() files = listfiles(folder) end)
+            local files; pcall(function() files = listfiles(folder) end)
             if files then for _, f in ipairs(files) do out[#out + 1] = f end end
-        else
-            for k in pairs(mem) do out[#out + 1] = k end
-        end
+        else for k in pairs(mem) do out[#out + 1] = k end end
         return out
     end
     function FileSystem.makeFolder(folder)
@@ -279,9 +274,7 @@ local function destroyOldGui()
     end)
     for _, par in ipairs(parents) do
         for _, ch in ipairs(par:GetChildren()) do
-            if ch.Name == GUI_NAME then
-                pcall(function() ch:Destroy() end)
-            end
+            if ch.Name == GUI_NAME then pcall(function() ch:Destroy() end) end
         end
     end
 end
@@ -301,8 +294,26 @@ ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.IgnoreGuiInset = true
 pcall(function() ScreenGui.Parent = getGuiParent() end)
-if not ScreenGui.Parent then
-    ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+
+-- ── GLOBAL FONT APPLY ─────────────────────────────────────────────────────────
+-- Sweeps every text-bearing descendant of ScreenGui and applies the chosen font.
+-- Bold-tagged objects get the bold variant; plain objects get the base font.
+local function applyGlobalFont(fontEnum)
+    GlobalFont     = fontEnum
+    GlobalFontBold = boldVariant(fontEnum)
+    for _, obj in ipairs(ScreenGui:GetDescendants()) do
+        if obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
+            -- skip tiny structural labels that should stay monospace (e.g. "::", ">", "v")
+            local skip = (obj.Text == "::" or obj.Text == ">" or obj.Text == "v"
+                       or obj.Text == "..." or obj.Text == "X")
+            if not skip then
+                local isBold = false
+                pcall(function() isBold = obj:GetAttribute(BOLD_TAG) == true end)
+                obj.Font = isBold and GlobalFontBold or GlobalFont
+            end
+        end
+    end
 end
 
 local function applyTheme(name)
@@ -357,9 +368,7 @@ local function applyTheme(name)
         end
     end
 
-    for _, fn in ipairs(ThemeListeners) do
-        pcall(fn, t)
-    end
+    for _, fn in ipairs(ThemeListeners) do pcall(fn, t) end
 
     if _Catalyst._customAccent then
         setAccent(Theme.Accent)
@@ -378,9 +387,7 @@ taskLib.spawn(function()
 end)
 
 local function serialize(v)
-    if typeof(v) == "Color3" then
-        return { __c3 = { v.R, v.G, v.B } }
-    end
+    if typeof(v) == "Color3" then return { __c3 = { v.R, v.G, v.B } } end
     return v
 end
 local function deserialize(v)
@@ -393,8 +400,9 @@ end
 local function makeAPI(scroll)
     local layout = Instance.new("UIListLayout")
     layout.SortOrder = Enum.SortOrder.LayoutOrder
-    layout.Padding   = UDim.new(0, 8)
+    layout.Padding   = UDim.new(0, GlobalPadding)
     layout.Parent    = scroll
+    regLayout(layout)   -- ← tracked so padding slider updates it live
 
     local p = Instance.new("UIPadding")
     p.PaddingTop    = UDim.new(0, 6)
@@ -403,25 +411,11 @@ local function makeAPI(scroll)
     p.PaddingBottom = UDim.new(0, 10)
     p.Parent = scroll
 
-    -- Track padding UIPadding instances so we can update them live
-    local paddingInstances = {}
-    local function regPad(padInst)
-        paddingInstances[#paddingInstances + 1] = padInst
-        onPadding(function(px)
-            local ud = UDim.new(0, px)
-            padInst.PaddingTop    = ud
-            padInst.PaddingBottom = ud
-            padInst.PaddingLeft   = ud
-            padInst.PaddingRight  = ud
-        end)
-        return padInst
-    end
-
     scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
     scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 
     local order = 0
-    local function nextOrder() order = order + 1 return order end
+    local function nextOrder() order = order + 1; return order end
 
     local currentSection = nil
     local function track(obj)
@@ -465,23 +459,7 @@ local function makeAPI(scroll)
         return f
     end
 
-    -- All text labels created here register for font updates
-    local textObjects = {}
-    local function regText(obj, isBold, isSubText)
-        textObjects[#textObjects + 1] = { obj = obj, bold = isBold, sub = isSubText }
-        onFont(function(fontEnum)
-            if isBold then
-                -- keep bold as bold variant if available, else use same font
-                local boldName = fontEnum.Name .. "Bold"
-                local ok, fe = pcall(function() return Enum.Font[boldName] end)
-                obj.Font = (ok and fe) and fe or fontEnum
-            else
-                obj.Font = fontEnum
-            end
-        end)
-        return obj
-    end
-
+    -- Helper: make a title label and tag it for bold font changes
     local function makeTitle(card, text, yOff, widthOffset)
         local t = Instance.new("TextLabel")
         t.BackgroundTransparency = 1
@@ -494,7 +472,6 @@ local function makeAPI(scroll)
         t.TextXAlignment = Enum.TextXAlignment.Left
         t.TextTruncate = Enum.TextTruncate.AtEnd
         t.Parent = card
-        regText(t, false, false)
         return t
     end
 
@@ -512,7 +489,6 @@ local function makeAPI(scroll)
         d.TextXAlignment = Enum.TextXAlignment.Left
         d.TextYAlignment = Enum.TextYAlignment.Top
         d.Parent = card
-        regText(d, false, true)
         return d
     end
 
@@ -525,12 +501,8 @@ local function makeAPI(scroll)
         b.AutoButtonColor = false
         b.ZIndex = 2
         b.Parent = card
-        b.MouseEnter:Connect(function()
-            tween(card, 0.15, { BackgroundColor3 = Theme.Hover })
-        end)
-        b.MouseLeave:Connect(function()
-            tween(card, 0.15, { BackgroundColor3 = Theme.Element })
-        end)
+        b.MouseEnter:Connect(function() tween(card, 0.15, { BackgroundColor3 = Theme.Hover }) end)
+        b.MouseLeave:Connect(function() tween(card, 0.15, { BackgroundColor3 = Theme.Element }) end)
         return b
     end
 
@@ -554,28 +526,20 @@ local function makeAPI(scroll)
                 if searching then
                     local hit = string.find(it.name, query, 1, true) ~= nil
                     it.frame.Visible = hit
-                    if hit then
-                        matchCount = matchCount + 1
+                    if hit then matchCount = matchCount + 1
                         if it.section then it.section.__match = true end
                     end
                 else
                     it.frame.Visible = (not it.section) or (not it.section.collapsed)
                 end
             elseif it.kind == "line" then
-                if searching then
-                    it.frame.Visible = false
-                else
-                    it.frame.Visible = (not it.section) or (not it.section.collapsed)
-                end
+                if searching then it.frame.Visible = false
+                else it.frame.Visible = (not it.section) or (not it.section.collapsed) end
             end
         end
         for _, it in ipairs(searchItems) do
             if it.kind == "section" then
-                if searching then
-                    it.frame.Visible = it.sec.__match == true
-                else
-                    it.frame.Visible = true
-                end
+                it.frame.Visible = searching and (it.sec.__match == true) or true
             end
         end
         return matchCount
@@ -586,26 +550,17 @@ local function makeAPI(scroll)
         if query == "" then return 0 end
         local n = 0
         for _, it in ipairs(searchItems) do
-            if it.kind == "card" and string.find(it.name, query, 1, true) then
-                n = n + 1
-            end
+            if it.kind == "card" and string.find(it.name, query, 1, true) then n = n + 1 end
         end
         return n
     end
 
-    function api.__items()
-        return searchItems
-    end
-
-    function api.__scroll()
-        return scroll
-    end
+    function api.__items() return searchItems end
+    function api.__scroll() return scroll end
 
     function api.__restoreAll()
         for _, it in ipairs(searchItems) do
-            if it.frame and it.frame.Parent ~= scroll then
-                it.frame.Parent = scroll
-            end
+            if it.frame and it.frame.Parent ~= scroll then it.frame.Parent = scroll end
         end
         api.__search("")
     end
@@ -635,14 +590,14 @@ local function makeAPI(scroll)
         l.BackgroundTransparency = 1
         l.Position = UDim2.new(0, 20, 0, 0)
         l.Size = UDim2.new(1, -52, 1, 0)
-        l.Font = Enum.Font.GothamBold
+        l.Font = GlobalFontBold
         l.Text = string.upper(text)
         l.TextColor3 = Theme.Text
         l.TextSize = 12
         l.TextXAlignment = Enum.TextXAlignment.Left
         l.TextTruncate = Enum.TextTruncate.AtEnd
         l.Parent = f
-        regText(l, true, false)
+        tagBold(l)
 
         local chev = Instance.new("TextLabel")
         chev.BackgroundTransparency = 1
@@ -672,9 +627,7 @@ local function makeAPI(scroll)
             tween(chev, 0.2, { Rotation = sec.collapsed and 0 or 90 })
             _Catalyst.Flags[secFlag] = sec.collapsed
         end
-        btn.MouseButton1Click:Connect(function()
-            setCollapsed(not sec.collapsed)
-        end)
+        btn.MouseButton1Click:Connect(function() setCollapsed(not sec.collapsed) end)
 
         _Catalyst.Config[secFlag] = {
             Get     = function() return sec.collapsed end,
@@ -682,7 +635,6 @@ local function makeAPI(scroll)
             Default = false,
         }
         _Catalyst.Flags[secFlag] = false
-
         registerSection(f, sec, text)
         currentSection = sec
         return {
@@ -706,7 +658,6 @@ local function makeAPI(scroll)
         l.TextWrapped = true
         l.TextXAlignment = Enum.TextXAlignment.Left
         l.Parent = card
-        regText(l, false, true)
         register(card, text, "card")
         return { Set = function(t) l.Text = t end }
     end
@@ -766,7 +717,6 @@ local function makeAPI(scroll)
         if hasDesc then makeDesc(card, desc, 27) end
 
         local cY = hasDesc and { 0, 18 } or { 0.5, 0 }
-
         local pill = Instance.new("Frame")
         pill.AnchorPoint = Vector2.new(1, 0.5)
         pill.Position = UDim2.new(1, -14, cY[1], cY[2])
@@ -802,20 +752,15 @@ local function makeAPI(scroll)
             pill.BackgroundColor3 = state and c or Theme.Stroke
             knob.BackgroundColor3 = Theme.Text
         end)
-
         onTheme(function()
             knob.BackgroundColor3 = Theme.Text
             pill.BackgroundColor3 = state and Theme.Accent or Theme.Stroke
         end)
 
-        hitOverlay(card).MouseButton1Click:Connect(function()
-            apply(not state, true)
-        end)
+        hitOverlay(card).MouseButton1Click:Connect(function() apply(not state, true) end)
 
         if kbKey then
-            if _Catalyst.__kbAdd then
-                toggleKbEntry = _Catalyst.__kbAdd(text, opts.Keybind)
-            end
+            if _Catalyst.__kbAdd then toggleKbEntry = _Catalyst.__kbAdd(text, opts.Keybind) end
 
             local chip = Instance.new("Frame")
             chip.AnchorPoint = Vector2.new(1, 0.5)
@@ -837,7 +782,6 @@ local function makeAPI(scroll)
             chipLbl.TextSize = 11
             chipLbl.TextTruncate = Enum.TextTruncate.AtEnd
             chipLbl.Parent = chip
-            regText(chipLbl, false, true)
 
             local chipBtn = Instance.new("TextButton")
             chipBtn.BackgroundTransparency = 1
@@ -864,9 +808,7 @@ local function makeAPI(scroll)
                 local conn
                 conn = UserInputService.InputBegan:Connect(function(i)
                     if i.UserInputType == Enum.UserInputType.Keyboard then
-                        setKbKey(i.KeyCode)
-                        kbListening = false
-                        conn:Disconnect()
+                        setKbKey(i.KeyCode); kbListening = false; conn:Disconnect()
                     end
                 end)
             end)
@@ -881,8 +823,8 @@ local function makeAPI(scroll)
 
             if flag then
                 _Catalyst.Config[flag .. "Key"] = {
-                    Get     = function() return kbKey end,
-                    Set     = function(k) setKbKey(k) end,
+                    Get = function() return kbKey end,
+                    Set = function(k) setKbKey(k) end,
                     Default = kbKey,
                 }
                 _Catalyst.Flags[flag .. "Key"] = kbKey
@@ -915,12 +857,8 @@ local function makeAPI(scroll)
         register(card, text, "card")
 
         local function fmt(n)
-            local v
-            if decimals > 0 then
-                v = string.format("%." .. decimals .. "f", n)
-            else
-                v = tostring(math.floor(n + 0.5))
-            end
+            local v = decimals > 0 and string.format("%." .. decimals .. "f", n)
+                or tostring(math.floor(n + 0.5))
             return prefix .. v .. suffix
         end
 
@@ -931,13 +869,14 @@ local function makeAPI(scroll)
         valLbl.AnchorPoint = Vector2.new(1, 0)
         valLbl.Position = UDim2.new(1, -14, 0, 8)
         valLbl.Size = UDim2.new(0, 88, 0, 18)
-        valLbl.Font = Enum.Font.GothamBold
+        valLbl.Font = GlobalFontBold
         valLbl.Text = fmt(default)
         valLbl.TextColor3 = Theme.Text
         valLbl.TextSize = 13
         valLbl.TextXAlignment = Enum.TextXAlignment.Right
         valLbl.TextTruncate = Enum.TextTruncate.AtEnd
         valLbl.Parent = card
+        tagBold(valLbl)
 
         if hasDesc then makeDesc(card, desc, 27) end
 
@@ -1025,7 +964,6 @@ local function makeAPI(scroll)
         title.TextXAlignment = Enum.TextXAlignment.Left
         title.TextTruncate = Enum.TextTruncate.AtEnd
         title.Parent = card
-        regText(title, false, false)
 
         local sel = Instance.new("TextLabel")
         sel.BackgroundTransparency = 1
@@ -1039,7 +977,6 @@ local function makeAPI(scroll)
         sel.TextXAlignment = Enum.TextXAlignment.Right
         sel.TextTruncate = Enum.TextTruncate.AtEnd
         sel.Parent = card
-        regText(sel, false, true)
 
         local arrow = Instance.new("TextLabel")
         arrow.BackgroundTransparency = 1
@@ -1106,7 +1043,6 @@ local function makeAPI(scroll)
             it.TextTruncate = Enum.TextTruncate.AtEnd
             it.Parent = holder
             corner(it, 4)
-            regText(it, false, true)
             it.MouseEnter:Connect(function()
                 tween(it, 0.12, { BackgroundColor3 = Theme.Hover, TextColor3 = Theme.Text })
             end)
@@ -1119,7 +1055,6 @@ local function makeAPI(scroll)
 
         for _, v in ipairs(list) do addItem(v) end
         hitOverlay(card, 38).MouseButton1Click:Connect(toggle)
-
         if default then choose(default, false) end
         if flag then
             _Catalyst.Config[flag] = {
@@ -1133,7 +1068,7 @@ local function makeAPI(scroll)
         return {
             Get     = function() return selected end,
             Set     = function(v) choose(v, true) end,
-            Add     = function(v) addItem(v) if open then sizeCard() end end,
+            Add     = function(v) addItem(v); if open then sizeCard() end end,
             Refresh = function(newList)
                 for _, it in ipairs(items) do it:Destroy() end
                 items = {}
@@ -1161,7 +1096,6 @@ local function makeAPI(scroll)
         title.TextXAlignment = Enum.TextXAlignment.Left
         title.TextTruncate = Enum.TextTruncate.AtEnd
         title.Parent = card
-        regText(title, false, false)
 
         local sel = Instance.new("TextLabel")
         sel.BackgroundTransparency = 1
@@ -1175,7 +1109,6 @@ local function makeAPI(scroll)
         sel.TextXAlignment = Enum.TextXAlignment.Right
         sel.TextTruncate = Enum.TextTruncate.AtEnd
         sel.Parent = card
-        regText(sel, false, true)
 
         local arrow = Instance.new("TextLabel")
         arrow.BackgroundTransparency = 1
@@ -1209,9 +1142,7 @@ local function makeAPI(scroll)
         local selected = {}
 
         local function isSel(v)
-            for _, x in ipairs(selected) do
-                if x == v then return true end
-            end
+            for _, x in ipairs(selected) do if x == v then return true end end
             return false
         end
         local function snapshot()
@@ -1220,21 +1151,14 @@ local function makeAPI(scroll)
             return t
         end
         local function refreshDisplay()
-            if #selected == 0 then
-                sel.Text = "None"
-                sel.TextColor3 = Theme.SubText
-            else
-                sel.Text = table.concat(selected, ", ")
-                sel.TextColor3 = Theme.Text
-            end
+            if #selected == 0 then sel.Text = "None"; sel.TextColor3 = Theme.SubText
+            else sel.Text = table.concat(selected, ", "); sel.TextColor3 = Theme.Text end
         end
         local function sizeCard()
             if open then
                 local n = math.max(1, math.min(#items, 5))
                 card.Size = UDim2.new(1, 0, 0, 44 + n * 28)
-            else
-                card.Size = UDim2.new(1, 0, 0, 38)
-            end
+            else card.Size = UDim2.new(1, 0, 0, 38) end
         end
         local function toggleOpen()
             open = not open
@@ -1252,22 +1176,17 @@ local function makeAPI(scroll)
         local function toggleItem(v)
             if isSel(v) then
                 for i, x in ipairs(selected) do
-                    if x == v then table.remove(selected, i) break end
+                    if x == v then table.remove(selected, i); break end
                 end
-            else
-                selected[#selected + 1] = v
-            end
-            refreshItems()
-            refreshDisplay()
-            fire()
+            else selected[#selected + 1] = v end
+            refreshItems(); refreshDisplay(); fire()
         end
         local function setSelected(tbl, doFire)
             selected = {}
             if type(tbl) == "table" then
                 for _, v in ipairs(tbl) do selected[#selected + 1] = v end
             end
-            refreshItems()
-            refreshDisplay()
+            refreshItems(); refreshDisplay()
             if flag then _Catalyst.Flags[flag] = snapshot() end
             if doFire then pcall(callback, snapshot()) end
         end
@@ -1311,7 +1230,6 @@ local function makeAPI(scroll)
             nameLbl.TextXAlignment = Enum.TextXAlignment.Left
             nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
             nameLbl.Parent = row
-            regText(nameLbl, false, true)
 
             local function update()
                 local on = isSel(v)
@@ -1321,30 +1239,20 @@ local function makeAPI(scroll)
                 nameLbl.TextColor3 = on and Theme.Text or Theme.SubText
             end
 
-            row.MouseEnter:Connect(function()
-                tween(row, 0.12, { BackgroundColor3 = Theme.Hover })
-            end)
-            row.MouseLeave:Connect(function()
-                tween(row, 0.12, { BackgroundColor3 = Theme.Panel })
-            end)
+            row.MouseEnter:Connect(function() tween(row, 0.12, { BackgroundColor3 = Theme.Hover }) end)
+            row.MouseLeave:Connect(function() tween(row, 0.12, { BackgroundColor3 = Theme.Panel }) end)
             row.MouseButton1Click:Connect(function() toggleItem(v) end)
-
             items[#items + 1] = { instance = row, update = update }
             update()
         end
 
         for _, v in ipairs(list) do addItem(v) end
         hitOverlay(card, 38).MouseButton1Click:Connect(toggleOpen)
-
         onAccent(refreshItems)
         onTheme(refreshItems)
         onTheme(refreshDisplay)
-
-        if type(default) == "table" then
-            setSelected(default, false)
-        else
-            refreshDisplay()
-        end
+        if type(default) == "table" then setSelected(default, false)
+        else refreshDisplay() end
 
         if flag then
             _Catalyst.Config[flag] = {
@@ -1359,14 +1267,13 @@ local function makeAPI(scroll)
             Get         = function() return snapshot() end,
             GetSelected = function() return snapshot() end,
             Set         = function(v) setSelected(v, true) end,
-            Add         = function(v) addItem(v) if open then sizeCard() end end,
+            Add         = function(v) addItem(v); if open then sizeCard() end end,
             Clear       = function() setSelected({}, true) end,
             Refresh     = function(newList)
                 for _, it in ipairs(items) do it.instance:Destroy() end
                 items = {}
                 for _, v in ipairs(newList or {}) do addItem(v) end
-                refreshDisplay()
-                sizeCard()
+                refreshDisplay(); sizeCard()
             end,
         }
     end
@@ -1421,24 +1328,24 @@ local function makeAPI(scroll)
         corner(hueBar, 4)
         local hg = Instance.new("UIGradient")
         hg.Color = ColorSequence.new {
-            ColorSequenceKeypoint.new(0.00, Color3.fromRGB(255, 0, 0)),
-            ColorSequenceKeypoint.new(0.17, Color3.fromRGB(255, 255, 0)),
-            ColorSequenceKeypoint.new(0.33, Color3.fromRGB(0, 255, 0)),
-            ColorSequenceKeypoint.new(0.50, Color3.fromRGB(0, 255, 255)),
-            ColorSequenceKeypoint.new(0.67, Color3.fromRGB(0, 0, 255)),
-            ColorSequenceKeypoint.new(0.83, Color3.fromRGB(255, 0, 255)),
-            ColorSequenceKeypoint.new(1.00, Color3.fromRGB(255, 0, 0)),
+            ColorSequenceKeypoint.new(0.00, Color3.fromRGB(255,0,0)),
+            ColorSequenceKeypoint.new(0.17, Color3.fromRGB(255,255,0)),
+            ColorSequenceKeypoint.new(0.33, Color3.fromRGB(0,255,0)),
+            ColorSequenceKeypoint.new(0.50, Color3.fromRGB(0,255,255)),
+            ColorSequenceKeypoint.new(0.67, Color3.fromRGB(0,0,255)),
+            ColorSequenceKeypoint.new(0.83, Color3.fromRGB(255,0,255)),
+            ColorSequenceKeypoint.new(1.00, Color3.fromRGB(255,0,0)),
         }
         hg.Parent = hueBar
 
         local hueDot = Instance.new("Frame")
         hueDot.AnchorPoint = Vector2.new(0.5, 0.5)
         hueDot.Size = UDim2.new(0, 6, 1, 4)
-        hueDot.BackgroundColor3 = Color3.new(1, 1, 1)
+        hueDot.BackgroundColor3 = Color3.new(1,1,1)
         hueDot.BorderSizePixel = 0
         hueDot.Parent = hueBar
         corner(hueDot, 3)
-        stroke(hueDot, Color3.new(0, 0, 0), 1, 0.3)
+        stroke(hueDot, Color3.new(0,0,0), 1, 0.3)
 
         local rbRow = Instance.new("TextButton")
         rbRow.Position = UDim2.new(0, 12, 0, 172)
@@ -1452,7 +1359,6 @@ local function makeAPI(scroll)
         rbRow.AutoButtonColor = false
         rbRow.Visible = false
         rbRow.Parent = card
-        regText(rbRow, false, true)
 
         local rbPill = Instance.new("Frame")
         rbPill.AnchorPoint = Vector2.new(1, 0.5)
@@ -1492,22 +1398,18 @@ local function makeAPI(scroll)
             if fire then pcall(callback, col) end
         end
 
-        onAccent(function(c)
-            if rainbow then rbPill.BackgroundColor3 = c end
-        end)
+        onAccent(function(c) if rainbow then rbPill.BackgroundColor3 = c end end)
 
         bindDrag(box, function(posV)
             if rainbow then return end
             local x = math.clamp((posV.X - box.AbsolutePosition.X) / math.max(box.AbsoluteSize.X, 1), 0, 1)
             local y = math.clamp((posV.Y - box.AbsolutePosition.Y) / math.max(box.AbsoluteSize.Y, 1), 0, 1)
-            s, v = x, 1 - y
-            applyColor(true)
+            s, v = x, 1 - y; applyColor(true)
         end)
         bindDrag(hueBar, function(posV)
             if rainbow then return end
             local x = math.clamp((posV.X - hueBar.AbsolutePosition.X) / math.max(hueBar.AbsoluteSize.X, 1), 0, 1)
-            h = x
-            applyColor(true)
+            h = x; applyColor(true)
         end)
 
         rbRow.MouseButton1Click:Connect(function()
@@ -1518,8 +1420,7 @@ local function makeAPI(scroll)
                 taskLib.spawn(function()
                     while rainbow and alive() do
                         h, s, v = _Catalyst.RainbowColorValue, 1, 1
-                        applyColor(true)
-                        taskLib.wait()
+                        applyColor(true); taskLib.wait()
                     end
                 end)
             end
@@ -1527,9 +1428,7 @@ local function makeAPI(scroll)
 
         hitOverlay(card, 38).MouseButton1Click:Connect(function()
             open = not open
-            box.Visible = open
-            hueBar.Visible = open
-            rbRow.Visible = open
+            box.Visible = open; hueBar.Visible = open; rbRow.Visible = open
             sizeCard()
         end)
 
@@ -1537,7 +1436,7 @@ local function makeAPI(scroll)
         if flag then
             _Catalyst.Config[flag] = {
                 Get     = function() return Color3.fromHSV(h, s, v) end,
-                Set     = function(c) h, s, v = Color3.toHSV(c) applyColor(true) end,
+                Set     = function(c) h, s, v = Color3.toHSV(c); applyColor(true) end,
                 Default = default,
             }
             _Catalyst.Flags[flag] = default
@@ -1545,8 +1444,8 @@ local function makeAPI(scroll)
         pcall(callback, default)
         return {
             Get       = function() return Color3.fromHSV(h, s, v) end,
-            Set       = function(c) h, s, v = Color3.toHSV(c) applyColor(true) end,
-            SetSilent = function(c) h, s, v = Color3.toHSV(c) applyColor(false) end,
+            Set       = function(c) h, s, v = Color3.toHSV(c); applyColor(true) end,
+            SetSilent = function(c) h, s, v = Color3.toHSV(c); applyColor(false) end,
         }
     end
 
@@ -1578,7 +1477,6 @@ local function makeAPI(scroll)
         modeLbl.TextSize = 11
         modeLbl.TextXAlignment = Enum.TextXAlignment.Right
         modeLbl.Parent = card
-        regText(modeLbl, false, true)
 
         local box = Instance.new("Frame")
         box.AnchorPoint = Vector2.new(1, 0.5)
@@ -1600,14 +1498,13 @@ local function makeAPI(scroll)
         keyLbl.TextSize = 12
         keyLbl.TextTruncate = Enum.TextTruncate.AtEnd
         keyLbl.Parent = box
-        regText(keyLbl, false, true)
 
         local active = false
         local function bindFlashOn()
             active = true
             tween(box, 0.12, { BackgroundColor3 = Theme.Accent })
             boxStroke.Color = Theme.Accent
-            keyLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+            keyLbl.TextColor3 = Color3.fromRGB(255,255,255)
         end
         local function bindFlashOff()
             active = false
@@ -1616,20 +1513,13 @@ local function makeAPI(scroll)
             keyLbl.TextColor3 = Theme.SubText
         end
 
-        onAccent(function(c)
-            if active then
-                box.BackgroundColor3 = c
-                boxStroke.Color = c
-            end
-        end)
+        onAccent(function(c) if active then box.BackgroundColor3 = c; boxStroke.Color = c end end)
         onTheme(function()
             if active then
-                box.BackgroundColor3 = Theme.Accent
-                boxStroke.Color = Theme.Accent
-                keyLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+                box.BackgroundColor3 = Theme.Accent; boxStroke.Color = Theme.Accent
+                keyLbl.TextColor3 = Color3.fromRGB(255,255,255)
             else
-                box.BackgroundColor3 = Theme.Panel
-                boxStroke.Color = Theme.Stroke
+                box.BackgroundColor3 = Theme.Panel; boxStroke.Color = Theme.Stroke
                 keyLbl.TextColor3 = Theme.SubText
             end
             modeLbl.TextColor3 = Theme.SubText
@@ -1652,9 +1542,7 @@ local function makeAPI(scroll)
             local conn
             conn = UserInputService.InputBegan:Connect(function(i)
                 if i.UserInputType == Enum.UserInputType.Keyboard then
-                    setKey(i.KeyCode)
-                    listening = false
-                    conn:Disconnect()
+                    setKey(i.KeyCode); listening = false; conn:Disconnect()
                 end
             end)
         end)
@@ -1676,8 +1564,7 @@ local function makeAPI(scroll)
                     bindFlashOn()
                     if kbEntry then kbEntry:SetActive(true) end
                     taskLib.spawn(function()
-                        taskLib.wait(0.16)
-                        bindFlashOff()
+                        taskLib.wait(0.16); bindFlashOff()
                         if kbEntry then kbEntry:SetActive(false) end
                     end)
                     pcall(callback)
@@ -1703,11 +1590,7 @@ local function makeAPI(scroll)
             }
             _Catalyst.Flags[flag] = key
         end
-        return {
-            Get      = function() return key end,
-            Set      = setKey,
-            GetState = function() return bstate end,
-        }
+        return { Get = function() return key end, Set = setKey, GetState = function() return bstate end }
     end
 
     function api:Textbox(text, desc, clearOnEnter, callback, flag)
@@ -1745,7 +1628,6 @@ local function makeAPI(scroll)
         tb.TextXAlignment = Enum.TextXAlignment.Left
         tb.TextTruncate = Enum.TextTruncate.AtEnd
         tb.Parent = frame
-        regText(tb, false, false)
 
         tb.FocusLost:Connect(function(enter)
             if enter then
@@ -1758,7 +1640,7 @@ local function makeAPI(scroll)
         if flag then
             _Catalyst.Config[flag] = {
                 Get     = function() return tb.Text end,
-                Set     = function(vv) tb.Text = tostring(vv) pcall(callback, tb.Text) end,
+                Set     = function(vv) tb.Text = tostring(vv); pcall(callback, tb.Text) end,
                 Default = "",
             }
             _Catalyst.Flags[flag] = ""
@@ -1830,7 +1712,7 @@ function _Catalyst:Window(opt)
     if workspace.CurrentCamera then
         workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
             if not alive() then return end
-            computeFit() applyScale()
+            computeFit(); applyScale()
         end)
     end
 
@@ -1858,19 +1740,13 @@ function _Catalyst:Window(opt)
                 toggleBusy = false
             end)
         end
-
         if wmVisible and streamerMode then
             local wmf = ScreenGui:FindFirstChild("_CatalystWatermark")
-            if wmf then
-                wmf.Visible = isOpen
-            end
+            if wmf then wmf.Visible = isOpen end
         end
-
         if streamerMode and kbFrame then
             kbFrame.Visible = isOpen and kbListEnabled and (#kbRows > 0)
-        elseif kbRefresh then
-            kbRefresh()
-        end
+        elseif kbRefresh then kbRefresh() end
     end
 
     local function makePanel(titleText)
@@ -1902,23 +1778,25 @@ function _Catalyst:Window(opt)
         grip.BackgroundTransparency = 1
         grip.Position = UDim2.new(0, 10, 0, 0)
         grip.Size = UDim2.new(0, 16, 1, 0)
-        grip.Font = Enum.Font.GothamBold
+        grip.Font = GlobalFontBold
         grip.Text = "::"
         grip.TextColor3 = Theme.SubText
         grip.TextSize = 14
         grip.Parent = header
+        tagBold(grip)
 
         local tl = Instance.new("TextLabel")
         tl.BackgroundTransparency = 1
         tl.Position = UDim2.new(0, 28, 0, 0)
         tl.Size = UDim2.new(1, -40, 1, 0)
-        tl.Font = Enum.Font.GothamBold
+        tl.Font = GlobalFontBold
         tl.Text = titleText
         tl.TextColor3 = Theme.Text
         tl.TextSize = 14
         tl.TextXAlignment = Enum.TextXAlignment.Left
         tl.TextTruncate = Enum.TextTruncate.AtEnd
         tl.Parent = header
+        tagBold(tl)
 
         local body = Instance.new("Frame")
         body.Position = UDim2.new(0, 0, 0, 32)
@@ -1953,7 +1831,6 @@ function _Catalyst:Window(opt)
         sub.TextXAlignment = Enum.TextXAlignment.Left
         sub.TextTruncate = Enum.TextTruncate.AtEnd
         sub.Parent = contentPanel.header
-        onFont(function(fe) sub.Font = fe end)
 
         local searchFrame = Instance.new("Frame")
         searchFrame.AnchorPoint = Vector2.new(1, 0.5)
@@ -1998,7 +1875,6 @@ function _Catalyst:Window(opt)
         searchBox.TextXAlignment = Enum.TextXAlignment.Left
         searchBox.TextTruncate = Enum.TextTruncate.AtEnd
         searchBox.Parent = searchFrame
-        onFont(function(fe) searchBox.Font = fe end)
 
         local aggScroll = Instance.new("ScrollingFrame")
         aggScroll.Name = "_AggregateSearch"
@@ -2032,13 +1908,12 @@ function _Catalyst:Window(opt)
         aggEmpty.TextSize = 13
         aggEmpty.Visible = false
         aggEmpty.Parent = aggScroll
-        onFont(function(fe) aggEmpty.Font = fe end)
 
         local borrowed = {}
         local tabHeaders = {}
         local secHeaders = {}
         local aggOrder = 0
-        local function aggNext() aggOrder = aggOrder + 1 return aggOrder end
+        local function aggNext() aggOrder = aggOrder + 1; return aggOrder end
 
         local tabHeaderPool = 0
         local function makeTabHeader(text)
@@ -2048,17 +1923,13 @@ function _Catalyst:Window(opt)
                 f = Instance.new("TextLabel")
                 f.BackgroundTransparency = 1
                 f.Size = UDim2.new(1, 0, 0, 22)
-                f.Font = Enum.Font.GothamBold
+                f.Font = GlobalFontBold
                 f.TextSize = 14
                 f.TextXAlignment = Enum.TextXAlignment.Left
                 f.TextTruncate = Enum.TextTruncate.AtEnd
                 f.Parent = aggScroll
                 tabHeaders[tabHeaderPool] = f
-                onFont(function(fe)
-                    local boldName = fe.Name .. "Bold"
-                    local ok, bold = pcall(function() return Enum.Font[boldName] end)
-                    f.Font = (ok and bold) and bold or fe
-                end)
+                tagBold(f)
             end
             f.Text = string.upper(text)
             f.TextColor3 = Theme.Text
@@ -2090,17 +1961,13 @@ function _Catalyst:Window(opt)
                 lbl.BackgroundTransparency = 1
                 lbl.Position = UDim2.new(0, 22, 0, 0)
                 lbl.Size = UDim2.new(1, -30, 1, 0)
-                lbl.Font = Enum.Font.GothamBold
+                lbl.Font = GlobalFontBold
                 lbl.TextSize = 12
                 lbl.TextXAlignment = Enum.TextXAlignment.Left
                 lbl.TextTruncate = Enum.TextTruncate.AtEnd
                 lbl.Parent = f
+                tagBold(lbl)
                 secHeaders[headerPool] = f
-                onFont(function(fe)
-                    local boldName = fe.Name .. "Bold"
-                    local ok, bold = pcall(function() return Enum.Font[boldName] end)
-                    lbl.Font = (ok and bold) and bold or fe
-                end)
             end
             f.Visible = true
             f.LayoutOrder = aggNext()
@@ -2127,8 +1994,7 @@ function _Catalyst:Window(opt)
 
         local function showNormalTabs()
             aggScroll.Visible = false
-            restoreBorrowed()
-            hideAggHeaders()
+            restoreBorrowed(); hideAggHeaders()
             for _, t in ipairs(allTabApis) do
                 if t.capi and t.capi.__restoreAll then t.capi.__restoreAll() end
             end
@@ -2138,24 +2004,18 @@ function _Catalyst:Window(opt)
         end
 
         local function runAggregate(q)
-            restoreBorrowed()
-            hideAggHeaders()
-            headerPool = 0
-            tabHeaderPool = 0
-            aggOrder = 0
+            restoreBorrowed(); hideAggHeaders()
+            headerPool = 0; tabHeaderPool = 0; aggOrder = 0
             for _, t in ipairs(tabs) do t.container.Visible = false end
             aggScroll.Visible = true
-
             local lq = string.lower(q)
             local any = false
-
             for _, t in ipairs(allTabApis) do
                 local items = t.capi.__items and t.capi.__items() or {}
                 local tabHasMatch = false
                 for _, it in ipairs(items) do
                     if it.kind == "card" and string.find(it.name, lq, 1, true) then
-                        tabHasMatch = true
-                        break
+                        tabHasMatch = true; break
                     end
                 end
                 if tabHasMatch then
@@ -2170,10 +2030,8 @@ function _Catalyst:Window(opt)
                                 makeSecHeader(secObj.displayName or "")
                             end
                             borrowed[#borrowed + 1] = {
-                                frame = it.frame,
-                                parent = it.frame.Parent,
-                                order = it.frame.LayoutOrder,
-                                vis = it.frame.Visible,
+                                frame = it.frame, parent = it.frame.Parent,
+                                order = it.frame.LayoutOrder, vis = it.frame.Visible,
                             }
                             it.frame.Visible = true
                             it.frame.LayoutOrder = aggNext()
@@ -2182,26 +2040,15 @@ function _Catalyst:Window(opt)
                     end
                 end
             end
-
             aggEmpty.Visible = not any
-            if not any then
-                aggEmpty.LayoutOrder = aggNext()
-            end
+            if not any then aggEmpty.LayoutOrder = aggNext() end
         end
 
-        searchBox.Focused:Connect(function()
-            tween(searchStroke, 0.15, { Color = Theme.Accent })
-        end)
-        searchBox.FocusLost:Connect(function()
-            tween(searchStroke, 0.15, { Color = Theme.Stroke })
-        end)
+        searchBox.Focused:Connect(function() tween(searchStroke, 0.15, { Color = Theme.Accent }) end)
+        searchBox.FocusLost:Connect(function() tween(searchStroke, 0.15, { Color = Theme.Stroke }) end)
         searchBox:GetPropertyChangedSignal("Text"):Connect(function()
             local q = searchBox.Text
-            if q == "" then
-                showNormalTabs()
-            else
-                runAggregate(q)
-            end
+            if q == "" then showNormalTabs() else runAggregate(q) end
         end)
 
         onTheme(function()
@@ -2271,11 +2118,8 @@ function _Catalyst:Window(opt)
     local function placeFrame(f, x, y, w, h, animated)
         local posU  = UDim2.fromOffset(math.floor(x), math.floor(y))
         local sizeU = UDim2.fromOffset(math.floor(w), math.floor(h))
-        if animated then
-            tween(f, 0.28, { Position = posU, Size = sizeU }, Enum.EasingStyle.Quart)
-        else
-            f.Position, f.Size = posU, sizeU
-        end
+        if animated then tween(f, 0.28, { Position = posU, Size = sizeU }, Enum.EasingStyle.Quart)
+        else f.Position, f.Size = posU, sizeU end
     end
 
     local function layoutFromPanels(srcPanels, animated)
@@ -2293,8 +2137,7 @@ function _Catalyst:Window(opt)
                 placeFrame(pp.panel.frame, rect.x, cy, SIDE_W, each, animated)
                 cy = cy + each + GAP
             end
-            rect.x = rect.x + SIDE_W + GAP
-            rect.w = rect.w - SIDE_W - GAP
+            rect.x = rect.x + SIDE_W + GAP; rect.w = rect.w - SIDE_W - GAP
         end
         if #byEdge.Right > 0 then
             local arr = byEdge.Right
@@ -2314,8 +2157,7 @@ function _Catalyst:Window(opt)
                 placeFrame(pp.panel.frame, cx, rect.y, each, SIDE_H, animated)
                 cx = cx + each + GAP
             end
-            rect.y = rect.y + SIDE_H + GAP
-            rect.h = rect.h - SIDE_H - GAP
+            rect.y = rect.y + SIDE_H + GAP; rect.h = rect.h - SIDE_H - GAP
         end
         if #byEdge.Bottom > 0 then
             local arr = byEdge.Bottom
@@ -2345,80 +2187,56 @@ function _Catalyst:Window(opt)
         _Catalyst.Flags["_layout"] = getLayout()
     end
     _Catalyst.Config["_layout"] = {
-        Get     = function() return getLayout() end,
-        Set     = function(v) applyLayout(v) end,
+        Get = function() return getLayout() end,
+        Set = function(v) applyLayout(v) end,
         Default = getLayout(),
     }
     _Catalyst.Flags["_layout"] = getLayout()
 
     local zoneFrames = {}
-
     local function makeZoneFrame()
         local z = Instance.new("Frame")
-        z.BackgroundTransparency = 1
-        z.BorderSizePixel = 0
-        z.Visible = false
-        z.ZIndex = 30
-        z.Parent = MainFrame
+        z.BackgroundTransparency = 1; z.BorderSizePixel = 0
+        z.Visible = false; z.ZIndex = 30; z.Parent = MainFrame
         corner(z, 8)
         local s = stroke(z, Theme.Accent, 2, 0)
         regAccent(s, "Color")
         return { frame = z }
     end
-
     local function ensureZoneFrames(needed)
-        while #zoneFrames < needed do
-            zoneFrames[#zoneFrames + 1] = makeZoneFrame()
-        end
-        for i = needed + 1, #zoneFrames do
-            zoneFrames[i].frame.Visible = false
-        end
+        while #zoneFrames < needed do zoneFrames[#zoneFrames + 1] = makeZoneFrame() end
+        for i = needed + 1, #zoneFrames do zoneFrames[i].frame.Visible = false end
     end
-
     local function hideAllZones()
-        for _, zf in ipairs(zoneFrames) do
-            zf.frame.Visible = false
-        end
+        for _, zf in ipairs(zoneFrames) do zf.frame.Visible = false end
     end
-
     local function nearestEdge(cursor)
         local mp, ms = MainFrame.AbsolutePosition, MainFrame.AbsoluteSize
         local rx = math.clamp((cursor.X - mp.X) / math.max(ms.X, 1), 0, 1)
         local ry = math.clamp((cursor.Y - mp.Y) / math.max(ms.Y, 1), 0, 1)
         local d = { Left = rx, Right = 1 - rx, Top = ry, Bottom = 1 - ry }
         local best, bestV = "Left", math.huge
-        for e, vv in pairs(d) do
-            if vv < bestV then best, bestV = e, vv end
-        end
-        local axisVal = (best == "Left" or best == "Right") and ry or rx
-        return best, axisVal
+        for e, vv in pairs(d) do if vv < bestV then best, bestV = e, vv end end
+        return best, (best == "Left" or best == "Right") and ry or rx
     end
-
     local function computeDockResult(key, edge, axisVal)
         local result = {}
-        for k, v in pairs(panels) do
-            result[k] = { panel = v.panel, edge = v.edge, order = v.order }
-        end
+        for k, v in pairs(panels) do result[k] = { panel = v.panel, edge = v.edge, order = v.order } end
         local other
         for k, v in pairs(result) do if k ~= key then other = v end end
         result[key].edge = edge
         if other and other.edge == edge then
             if axisVal < 0.5 then result[key].order, other.order = 1, 2
             else result[key].order, other.order = 2, 1 end
-        else
-            result[key].order = 1
-        end
+        else result[key].order = 1 end
         return result
     end
-
     local function cursorOverPanels(pos)
         local list = { tabsPanel.frame, contentPanel.frame, settingsPanel.frame }
         for _, f in ipairs(list) do
             local ap, as = f.AbsolutePosition, f.AbsoluteSize
             if pos.X >= ap.X and pos.X <= ap.X + as.X
-            and pos.Y >= ap.Y and pos.Y <= ap.Y + as.Y then
-                return true
-            end
+            and pos.Y >= ap.Y and pos.Y <= ap.Y + as.Y then return true end
         end
         return false
     end
@@ -2434,9 +2252,7 @@ function _Catalyst:Window(opt)
         end)
         MainFrame.InputEnded:Connect(function(i)
             if i.UserInputType == Enum.UserInputType.MouseButton1
-            or i.UserInputType == Enum.UserInputType.Touch then
-                dragging = false
-            end
+            or i.UserInputType == Enum.UserInputType.Touch then dragging = false end
         end)
         UserInputService.InputChanged:Connect(function(i)
             if not alive() then return end
@@ -2445,8 +2261,7 @@ function _Catalyst:Window(opt)
                 local delta = i.Position - startInput
                 MainFrame.Position = UDim2.new(
                     startPos.X.Scale, snap(startPos.X.Offset + delta.X),
-                    startPos.Y.Scale, snap(startPos.Y.Offset + delta.Y)
-                )
+                    startPos.Y.Scale, snap(startPos.Y.Offset + delta.Y))
             end
         end)
     end
@@ -2461,9 +2276,7 @@ function _Catalyst:Window(opt)
         end)
         contentPanel.header.InputEnded:Connect(function(i)
             if i.UserInputType == Enum.UserInputType.MouseButton1
-            or i.UserInputType == Enum.UserInputType.Touch then
-                dragging = false
-            end
+            or i.UserInputType == Enum.UserInputType.Touch then dragging = false end
         end)
         UserInputService.InputChanged:Connect(function(i)
             if not alive() then return end
@@ -2472,8 +2285,7 @@ function _Catalyst:Window(opt)
                 local delta = i.Position - startInput
                 MainFrame.Position = UDim2.new(
                     startPos.X.Scale, snap(startPos.X.Offset + delta.X),
-                    startPos.Y.Scale, snap(startPos.Y.Offset + delta.Y)
-                )
+                    startPos.Y.Scale, snap(startPos.Y.Offset + delta.Y))
             end
         end)
     end
@@ -2484,10 +2296,7 @@ function _Catalyst:Window(opt)
         local rect = { x = PAD, y = PAD, w = WIN_W - 2 * PAD, h = WIN_H - 2 * PAD }
         local byEdge = { Left = {}, Right = {}, Top = {}, Bottom = {} }
         for _, p in pairs(preview) do table.insert(byEdge[p.edge], p) end
-        for _, arr in pairs(byEdge) do
-            table.sort(arr, function(a, b) return a.order < b.order end)
-        end
-
+        for _, arr in pairs(byEdge) do table.sort(arr, function(a, b) return a.order < b.order end) end
         local hintX, hintY, hintW, hintH
         if target.edge == "Left" or target.edge == "Right" then
             local arr = byEdge[target.edge]
@@ -2498,10 +2307,10 @@ function _Catalyst:Window(opt)
             local cx = (target.edge == "Left") and rect.x or (rect.x + rect.w - SIDE_W)
             hintX, hintY, hintW, hintH = cx, cy, SIDE_W, each
         else
-            local leftW   = (#byEdge.Left  > 0) and SIDE_W or 0
-            local rightW  = (#byEdge.Right > 0) and SIDE_W or 0
-            local innerX  = rect.x + (leftW > 0 and leftW + GAP or 0)
-            local innerW  = rect.w - (leftW > 0 and leftW + GAP or 0) - (rightW > 0 and rightW + GAP or 0)
+            local leftW  = (#byEdge.Left  > 0) and SIDE_W or 0
+            local rightW = (#byEdge.Right > 0) and SIDE_W or 0
+            local innerX = rect.x + (leftW > 0 and leftW + GAP or 0)
+            local innerW = rect.w - (leftW > 0 and leftW + GAP or 0) - (rightW > 0 and rightW + GAP or 0)
             local arr = byEdge[target.edge]
             local each = (innerW - GAP * (#arr - 1)) / #arr
             local idx = 1
@@ -2510,7 +2319,6 @@ function _Catalyst:Window(opt)
             local cy = (target.edge == "Top") and rect.y or (rect.y + rect.h - SIDE_H)
             hintX, hintY, hintW, hintH = cx, cy, each, SIDE_H
         end
-
         ensureZoneFrames(1)
         local zf = zoneFrames[1]
         zf.frame.Position = UDim2.fromOffset(math.floor(hintX), math.floor(hintY))
@@ -2522,26 +2330,16 @@ function _Catalyst:Window(opt)
     local function makePanelDrag(key)
         local pData = panels[key]
         local handle = pData.panel.header
-        local dragging, startInput, startPos = false, nil, nil
-        local lastCursor = Vector2.new()
-        local committed = false
-
+        local dragging = false
         handle.InputBegan:Connect(function(i)
             if i.UserInputType == Enum.UserInputType.MouseButton1
-            or i.UserInputType == Enum.UserInputType.Touch then
-                dragging = true
-                startInput = i.Position
-                startPos = pData.panel.frame.Position
-                committed = false
-            end
+            or i.UserInputType == Enum.UserInputType.Touch then dragging = true end
         end)
         handle.InputEnded:Connect(function(i)
             if not dragging then return end
             if i.UserInputType == Enum.UserInputType.MouseButton1
             or i.UserInputType == Enum.UserInputType.Touch then
-                dragging = false
-                hideAllZones()
-                relayout(true)
+                dragging = false; hideAllZones(); relayout(true)
                 _Catalyst.Flags["_layout"] = getLayout()
             end
         end)
@@ -2549,8 +2347,8 @@ function _Catalyst:Window(opt)
             if not alive() then return end
             if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement
             or i.UserInputType == Enum.UserInputType.Touch) then
-                lastCursor = Vector2.new(i.Position.X, i.Position.Y)
-                local edge, axisVal = nearestEdge(lastCursor)
+                local cursor = Vector2.new(i.Position.X, i.Position.Y)
+                local edge, axisVal = nearestEdge(cursor)
                 local other
                 for k, v in pairs(panels) do if k ~= key then other = v end end
                 local prevEdge, prevOrder = pData.edge, pData.order
@@ -2559,13 +2357,9 @@ function _Catalyst:Window(opt)
                 if other and other.edge == edge then
                     if axisVal < 0.5 then pData.order, other.order = 1, 2
                     else pData.order, other.order = 2, 1 end
-                else
-                    pData.order = 1
-                end
+                else pData.order = 1 end
                 if pData.edge ~= prevEdge or pData.order ~= prevOrder
-                or (other and other.order ~= prevOtherOrder) then
-                    relayout(true)
-                end
+                or (other and other.order ~= prevOtherOrder) then relayout(true) end
                 showDockHint(key, edge, axisVal)
             end
         end)
@@ -2574,38 +2368,29 @@ function _Catalyst:Window(opt)
     makePanelDrag("Settings")
 
     local PLAYER_NAME = LocalPlayer.DisplayName or LocalPlayer.Name
-    local DEFAULT_HEADSHOT = "rbxthumb://type=AvatarHeadShot&id="
-        .. tostring(LocalPlayer.UserId) .. "&w=60&h=60"
+    local DEFAULT_HEADSHOT = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(LocalPlayer.UserId) .. "&w=60&h=60"
 
     local function resolveImage(str)
-        if not str or str == "" then
-            return DEFAULT_HEADSHOT
-        end
+        if not str or str == "" then return DEFAULT_HEADSHOT end
         local num = tonumber(str)
-        if num then
-            return "rbxassetid://" .. tostring(math.floor(num))
-        end
+        if num then return "rbxassetid://" .. tostring(math.floor(num)) end
         return str
     end
 
     local function getClientId()
         local id
-        pcall(function()
-            id = game:GetService("RbxAnalyticsService"):GetClientId()
-        end)
+        pcall(function() id = game:GetService("RbxAnalyticsService"):GetClientId() end)
         return tostring(id or "unknown")
     end
 
-    local WM_DEFAULT_POS = UDim2.new(0, 14, 1, -68)
+    local WM_DEFAULT_POS   = UDim2.new(0, 14, 1, -68)
     local WM_DEFAULT_SCALE = 0.88
-
     local wmScale = WM_DEFAULT_SCALE
-    local wmBaseW, wmBaseH = 300, 54
 
     local wmFrame = Instance.new("Frame")
     wmFrame.Name = "_CatalystWatermark"
     wmFrame.AnchorPoint = Vector2.new(0, 0)
-    wmFrame.Size = UDim2.fromOffset(wmBaseW, wmBaseH)
+    wmFrame.Size = UDim2.fromOffset(300, 54)
     wmFrame.Position = WM_DEFAULT_POS
     wmFrame.BackgroundColor3 = Theme.Panel
     wmFrame.BorderSizePixel = 0
@@ -2638,7 +2423,7 @@ function _Catalyst:Window(opt)
     wmLabel.BackgroundTransparency = 1
     wmLabel.Position = UDim2.new(0, 54, 0, 7)
     wmLabel.Size = UDim2.new(1, -62, 0, 18)
-    wmLabel.Font = Enum.Font.GothamBold
+    wmLabel.Font = GlobalFontBold
     wmLabel.Text = PLAYER_NAME
     wmLabel.TextColor3 = Theme.Text
     wmLabel.TextSize = 13
@@ -2646,11 +2431,7 @@ function _Catalyst:Window(opt)
     wmLabel.TextTruncate = Enum.TextTruncate.AtEnd
     wmLabel.ZIndex = 101
     wmLabel.Parent = wmFrame
-    onFont(function(fe)
-        local boldName = fe.Name .. "Bold"
-        local ok, bold = pcall(function() return Enum.Font[boldName] end)
-        wmLabel.Font = (ok and bold) and bold or fe
-    end)
+    tagBold(wmLabel)
 
     local wmSub = Instance.new("TextLabel")
     wmSub.BackgroundTransparency = 1
@@ -2664,7 +2445,6 @@ function _Catalyst:Window(opt)
     wmSub.TextTruncate = Enum.TextTruncate.AtEnd
     wmSub.ZIndex = 101
     wmSub.Parent = wmFrame
-    onFont(function(fe) wmSub.Font = fe end)
 
     onTheme(function()
         wmFrame.BackgroundColor3 = Theme.Panel
@@ -2673,41 +2453,22 @@ function _Catalyst:Window(opt)
         wmImage.BackgroundColor3 = Theme.Element
     end)
 
-    local function applyWmScale(s)
-        wmScale = s
-        wmUIScale.Scale = s
-    end
-
+    local function applyWmScale(s) wmScale = s; wmUIScale.Scale = s end
     local function setWatermarkName(t)
-        if t and t ~= "" then
-            wmLabel.Text = t
-        else
-            wmLabel.Text = PLAYER_NAME
-        end
+        wmLabel.Text = (t and t ~= "") and t or PLAYER_NAME
     end
-    local function setWatermarkImage(t)
-        wmImage.Image = resolveImage(t)
-    end
+    local function setWatermarkImage(t) wmImage.Image = resolveImage(t) end
     local function setWatermarkVisible(v)
         wmVisible = v and true or false
-        if not wmVisible then
-            wmFrame.Visible = false
-        else
-            if streamerMode then
-                wmFrame.Visible = isOpen
-            else
-                wmFrame.Visible = true
-            end
-        end
+        if not wmVisible then wmFrame.Visible = false
+        else wmFrame.Visible = streamerMode and isOpen or true end
     end
 
     local wmDragging, wmStartInput, wmStartPos = false, nil, nil
     wmFrame.InputBegan:Connect(function(i)
         if i.UserInputType == Enum.UserInputType.MouseButton1
         or i.UserInputType == Enum.UserInputType.Touch then
-            wmDragging = true
-            wmStartInput = i.Position
-            wmStartPos = wmFrame.Position
+            wmDragging = true; wmStartInput = i.Position; wmStartPos = wmFrame.Position
         end
     end)
     wmFrame.InputEnded:Connect(function(i)
@@ -2723,13 +2484,10 @@ function _Catalyst:Window(opt)
             local delta = i.Position - wmStartInput
             wmFrame.Position = UDim2.new(
                 wmStartPos.X.Scale, wmStartPos.X.Offset + delta.X,
-                wmStartPos.Y.Scale, wmStartPos.Y.Offset + delta.Y
-            )
+                wmStartPos.Y.Scale, wmStartPos.Y.Offset + delta.Y)
             _Catalyst.Flags["_wmpos"] = {
-                sx = wmFrame.Position.X.Scale,
-                ox = wmFrame.Position.X.Offset,
-                sy = wmFrame.Position.Y.Scale,
-                oy = wmFrame.Position.Y.Offset,
+                sx = wmFrame.Position.X.Scale, ox = wmFrame.Position.X.Offset,
+                sy = wmFrame.Position.Y.Scale, oy = wmFrame.Position.Y.Offset,
             }
         end
     end)
@@ -2737,13 +2495,12 @@ function _Catalyst:Window(opt)
     taskLib.spawn(function()
         while alive() do
             local t = os.date("*t")
-            local dateStr = string.format("%02d/%02d/%04d",
-                t.month, t.day, t.year)
-            wmSub.Text = getClientId() .. "  |  " .. dateStr
+            wmSub.Text = getClientId() .. "  |  " .. string.format("%02d/%02d/%04d", t.month, t.day, t.year)
             taskLib.wait(1)
         end
     end)
 
+    -- ── KEYBIND FRAME ─────────────────────────────────────────────────────────
     kbFrame = Instance.new("Frame")
     kbFrame.Name = "_CatalystKeybinds"
     kbFrame.AnchorPoint = Vector2.new(0, 0.5)
@@ -2789,18 +2546,14 @@ function _Catalyst:Window(opt)
     kbTitle.BackgroundTransparency = 1
     kbTitle.Position = UDim2.new(0, 12, 0, 0)
     kbTitle.Size = UDim2.new(1, -24, 1, 0)
-    kbTitle.Font = Enum.Font.GothamBold
+    kbTitle.Font = GlobalFontBold
     kbTitle.Text = "KEYBINDS"
     kbTitle.TextColor3 = Theme.Text
     kbTitle.TextSize = 12
     kbTitle.TextXAlignment = Enum.TextXAlignment.Left
     kbTitle.ZIndex = 102
     kbTitle.Parent = kbHeader
-    onFont(function(fe)
-        local boldName = fe.Name .. "Bold"
-        local ok, bold = pcall(function() return Enum.Font[boldName] end)
-        kbTitle.Font = (ok and bold) and bold or fe
-    end)
+    tagBold(kbTitle)
 
     local kbBody = Instance.new("Frame")
     kbBody.Position = UDim2.new(0, 0, 0, 30)
@@ -2816,10 +2569,8 @@ function _Catalyst:Window(opt)
     kbList.Parent = kbBody
 
     local kbPad = Instance.new("UIPadding")
-    kbPad.PaddingTop = UDim.new(0, 8)
-    kbPad.PaddingBottom = UDim.new(0, 10)
-    kbPad.PaddingLeft = UDim.new(0, 12)
-    kbPad.PaddingRight = UDim.new(0, 12)
+    kbPad.PaddingTop = UDim.new(0, 8); kbPad.PaddingBottom = UDim.new(0, 10)
+    kbPad.PaddingLeft = UDim.new(0, 12); kbPad.PaddingRight = UDim.new(0, 12)
     kbPad.Parent = kbBody
 
     onTheme(function()
@@ -2845,10 +2596,8 @@ function _Catalyst:Window(opt)
             or i.UserInputType == Enum.UserInputType.Touch then
                 dragging = false
                 _Catalyst.Flags["_kbpos"] = {
-                    sx = kbFrame.Position.X.Scale,
-                    ox = kbFrame.Position.X.Offset,
-                    sy = kbFrame.Position.Y.Scale,
-                    oy = kbFrame.Position.Y.Offset,
+                    sx = kbFrame.Position.X.Scale, ox = kbFrame.Position.X.Offset,
+                    sy = kbFrame.Position.Y.Scale, oy = kbFrame.Position.Y.Offset,
                 }
             end
         end)
@@ -2857,99 +2606,57 @@ function _Catalyst:Window(opt)
             if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement
             or i.UserInputType == Enum.UserInputType.Touch) then
                 local d = i.Position - si
-                kbFrame.Position = UDim2.new(
-                    sp.X.Scale, sp.X.Offset + d.X,
-                    sp.Y.Scale, sp.Y.Offset + d.Y
-                )
+                kbFrame.Position = UDim2.new(sp.X.Scale, sp.X.Offset + d.X, sp.Y.Scale, sp.Y.Offset + d.Y)
             end
         end)
     end
 
     _Catalyst.Config["_kbpos"] = {
         Get = function()
-            return {
-                sx = kbFrame.Position.X.Scale,
-                ox = kbFrame.Position.X.Offset,
-                sy = kbFrame.Position.Y.Scale,
-                oy = kbFrame.Position.Y.Offset,
-            }
+            return { sx = kbFrame.Position.X.Scale, ox = kbFrame.Position.X.Offset,
+                     sy = kbFrame.Position.Y.Scale, oy = kbFrame.Position.Y.Offset }
         end,
         Set = function(v)
             if type(v) == "table" and v.sx ~= nil then
                 kbFrame.Position = UDim2.new(v.sx, v.ox, v.sy, v.oy)
             end
         end,
-        Default = {
-            sx = KB_DEFAULT_POS.X.Scale,
-            ox = KB_DEFAULT_POS.X.Offset,
-            sy = KB_DEFAULT_POS.Y.Scale,
-            oy = KB_DEFAULT_POS.Y.Offset,
-        },
+        Default = { sx = KB_DEFAULT_POS.X.Scale, ox = KB_DEFAULT_POS.X.Offset,
+                    sy = KB_DEFAULT_POS.Y.Scale, oy = KB_DEFAULT_POS.Y.Offset },
     }
     _Catalyst.Flags["_kbpos"] = _Catalyst.Config["_kbpos"].Default
 
     kbRefresh = function()
         local shouldShow = kbListEnabled and (#kbRows > 0)
-        if not shouldShow then
-            kbFrame.Visible = false
-            return
-        end
-        if streamerMode then
-            kbFrame.Visible = isOpen
-        else
-            kbFrame.Visible = true
-        end
+        if not shouldShow then kbFrame.Visible = false; return end
+        kbFrame.Visible = streamerMode and isOpen or true
     end
 
     local function keybindAdd(name, key)
         local row = Instance.new("Frame")
-        row.Size = UDim2.new(1, 0, 0, 22)
-        row.BackgroundTransparency = 1
-        row.ZIndex = 101
-        row.Parent = kbBody
+        row.Size = UDim2.new(1, 0, 0, 22); row.BackgroundTransparency = 1
+        row.ZIndex = 101; row.Parent = kbBody
 
         local dot = Instance.new("Frame")
-        dot.AnchorPoint = Vector2.new(0, 0.5)
-        dot.Position = UDim2.new(0, 0, 0.5, 0)
-        dot.Size = UDim2.new(0, 7, 0, 7)
-        dot.BackgroundColor3 = Theme.SubText
-        dot.BorderSizePixel = 0
-        dot.ZIndex = 102
-        dot.Parent = row
-        corner(dot, 4)
+        dot.AnchorPoint = Vector2.new(0, 0.5); dot.Position = UDim2.new(0, 0, 0.5, 0)
+        dot.Size = UDim2.new(0, 7, 0, 7); dot.BackgroundColor3 = Theme.SubText
+        dot.BorderSizePixel = 0; dot.ZIndex = 102; dot.Parent = row; corner(dot, 4)
 
         local nameLbl = Instance.new("TextLabel")
-        nameLbl.BackgroundTransparency = 1
-        nameLbl.Position = UDim2.new(0, 16, 0, 0)
-        nameLbl.Size = UDim2.new(1, -86, 1, 0)
-        nameLbl.Font = GlobalFont
-        nameLbl.Text = tostring(name)
-        nameLbl.TextColor3 = Theme.SubText
-        nameLbl.TextSize = 12
-        nameLbl.TextXAlignment = Enum.TextXAlignment.Left
-        nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
-        nameLbl.ZIndex = 102
-        nameLbl.Parent = row
-        onFont(function(fe) nameLbl.Font = fe end)
+        nameLbl.BackgroundTransparency = 1; nameLbl.Position = UDim2.new(0, 16, 0, 0)
+        nameLbl.Size = UDim2.new(1, -86, 1, 0); nameLbl.Font = GlobalFont
+        nameLbl.Text = tostring(name); nameLbl.TextColor3 = Theme.SubText
+        nameLbl.TextSize = 12; nameLbl.TextXAlignment = Enum.TextXAlignment.Left
+        nameLbl.TextTruncate = Enum.TextTruncate.AtEnd; nameLbl.ZIndex = 102; nameLbl.Parent = row
 
         local keyLbl = Instance.new("TextLabel")
-        keyLbl.BackgroundTransparency = 1
-        keyLbl.AnchorPoint = Vector2.new(1, 0.5)
-        keyLbl.Position = UDim2.new(1, 0, 0.5, 0)
-        keyLbl.Size = UDim2.new(0, 66, 1, 0)
-        keyLbl.Font = Enum.Font.GothamBold
-        keyLbl.Text = keyNameOf(key)
-        keyLbl.TextColor3 = Theme.SubText
-        keyLbl.TextSize = 12
+        keyLbl.BackgroundTransparency = 1; keyLbl.AnchorPoint = Vector2.new(1, 0.5)
+        keyLbl.Position = UDim2.new(1, 0, 0.5, 0); keyLbl.Size = UDim2.new(0, 66, 1, 0)
+        keyLbl.Font = GlobalFontBold; keyLbl.Text = keyNameOf(key)
+        keyLbl.TextColor3 = Theme.SubText; keyLbl.TextSize = 12
         keyLbl.TextXAlignment = Enum.TextXAlignment.Right
-        keyLbl.TextTruncate = Enum.TextTruncate.AtEnd
-        keyLbl.ZIndex = 102
-        keyLbl.Parent = row
-        onFont(function(fe)
-            local boldName = fe.Name .. "Bold"
-            local ok, bold = pcall(function() return Enum.Font[boldName] end)
-            keyLbl.Font = (ok and bold) and bold or fe
-        end)
+        keyLbl.TextTruncate = Enum.TextTruncate.AtEnd; keyLbl.ZIndex = 102; keyLbl.Parent = row
+        tagBold(keyLbl)
 
         kbRows[#kbRows + 1] = row
 
@@ -2964,15 +2671,12 @@ function _Catalyst:Window(opt)
         function entry:SetName(n) nameLbl.Text = tostring(n) end
         function entry:Remove()
             for i, r in ipairs(kbRows) do
-                if r == row then table.remove(kbRows, i) break end
+                if r == row then table.remove(kbRows, i); break end
             end
-            row:Destroy()
-            kbRefresh()
+            row:Destroy(); kbRefresh()
         end
 
-        onAccent(function(c)
-            if entry.active then dot.BackgroundColor3 = c end
-        end)
+        onAccent(function(c) if entry.active then dot.BackgroundColor3 = c end end)
         onTheme(function()
             dot.BackgroundColor3 = entry.active and Theme.Accent or Theme.SubText
             nameLbl.TextColor3 = entry.active and Theme.Text or Theme.SubText
@@ -2985,66 +2689,48 @@ function _Catalyst:Window(opt)
     _Catalyst.__kbAdd = keybindAdd
 
     local function setKeybindListVisible(v)
-        kbListEnabled = v and true or false
-        kbRefresh()
+        kbListEnabled = v and true or false; kbRefresh()
     end
 
+    -- ── TAB ───────────────────────────────────────────────────────────────────
     local firstTab = true
     function Window:Tab(name, icon)
         local container = Instance.new("ScrollingFrame")
         container.Size = UDim2.new(1, 0, 1, 0)
-        container.BackgroundTransparency = 1
-        container.BorderSizePixel = 0
-        container.ScrollBarThickness = 4
-        container.CanvasSize = UDim2.new(0, 0, 0, 0)
-        container.Visible = false
-        container.Parent = contentPanel.body
+        container.BackgroundTransparency = 1; container.BorderSizePixel = 0
+        container.ScrollBarThickness = 4; container.CanvasSize = UDim2.new(0, 0, 0, 0)
+        container.Visible = false; container.Parent = contentPanel.body
         regAccent(container, "ScrollBarImageColor3")
 
         local capi = makeAPI(container)
 
         local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(1, 0, 0, 36)
-        btn.BackgroundColor3 = Theme.Element
-        btn.BackgroundTransparency = 1
-        btn.AutoButtonColor = false
-        btn.Text = ""
-        btn.Parent = tabScroll
-        corner(btn, 6)
+        btn.Size = UDim2.new(1, 0, 0, 36); btn.BackgroundColor3 = Theme.Element
+        btn.BackgroundTransparency = 1; btn.AutoButtonColor = false
+        btn.Text = ""; btn.Parent = tabScroll; corner(btn, 6)
 
         local indicator = Instance.new("Frame")
-        indicator.Size = UDim2.new(0, 3, 1, -12)
-        indicator.Position = UDim2.new(0, 0, 0, 6)
-        indicator.BorderSizePixel = 0
-        indicator.BackgroundTransparency = 1
-        indicator.BackgroundColor3 = Theme.Accent
-        indicator.Parent = btn
-        corner(indicator, 2)
-        regAccent(indicator, "BackgroundColor3")
+        indicator.Size = UDim2.new(0, 3, 1, -12); indicator.Position = UDim2.new(0, 0, 0, 6)
+        indicator.BorderSizePixel = 0; indicator.BackgroundTransparency = 1
+        indicator.BackgroundColor3 = Theme.Accent; indicator.Parent = btn
+        corner(indicator, 2); regAccent(indicator, "BackgroundColor3")
 
         local ic
         if icon then
             ic = Instance.new("ImageLabel")
-            ic.BackgroundTransparency = 1
-            ic.Position = UDim2.new(0, 12, 0.5, -9)
-            ic.Size = UDim2.new(0, 18, 0, 18)
-            ic.Image = icon
-            ic.ImageColor3 = Theme.SubText
-            ic.Parent = btn
+            ic.BackgroundTransparency = 1; ic.Position = UDim2.new(0, 12, 0.5, -9)
+            ic.Size = UDim2.new(0, 18, 0, 18); ic.Image = icon
+            ic.ImageColor3 = Theme.SubText; ic.Parent = btn
         end
 
         local lbl = Instance.new("TextLabel")
         lbl.BackgroundTransparency = 1
         lbl.Position = UDim2.new(0, icon and 38 or 14, 0, 0)
         lbl.Size = UDim2.new(1, icon and -46 or -22, 1, 0)
-        lbl.Font = GlobalFont
-        lbl.Text = name
-        lbl.TextColor3 = Theme.SubText
-        lbl.TextSize = 14
+        lbl.Font = GlobalFont; lbl.Text = name
+        lbl.TextColor3 = Theme.SubText; lbl.TextSize = 14
         lbl.TextXAlignment = Enum.TextXAlignment.Left
-        lbl.TextTruncate = Enum.TextTruncate.AtEnd
-        lbl.Parent = btn
-        onFont(function(fe) lbl.Font = fe end)
+        lbl.TextTruncate = Enum.TextTruncate.AtEnd; lbl.Parent = btn
 
         local entry = { container = container, btn = btn, lbl = lbl, indicator = indicator, icon = ic, capi = capi }
 
@@ -3068,17 +2754,14 @@ function _Catalyst:Window(opt)
         entry.activate = activate
         onAccent(function(c)
             if ic and container.Visible then ic.ImageColor3 = c end
-            if container.Visible then
-                indicator.BackgroundColor3 = c
-            end
+            if container.Visible then indicator.BackgroundColor3 = c end
         end)
         onTheme(function()
             btn.BackgroundColor3 = Theme.Element
             if container.Visible then
                 lbl.TextColor3 = Theme.Text
                 if ic then ic.ImageColor3 = Theme.Accent end
-                indicator.BackgroundColor3 = Theme.Accent
-                indicator.BackgroundTransparency = 0
+                indicator.BackgroundColor3 = Theme.Accent; indicator.BackgroundTransparency = 0
             else
                 lbl.TextColor3 = Theme.SubText
                 if ic then ic.ImageColor3 = Theme.SubText end
@@ -3096,14 +2779,15 @@ function _Catalyst:Window(opt)
         table.insert(tabs, entry)
         allTabApis[#allTabApis + 1] = { capi = capi, activate = activate, name = name }
         refreshTabList()
-        if firstTab then firstTab = false activate() end
+        if firstTab then firstTab = false; activate() end
         return capi
     end
 
-    local notifEnabled = true
-    local notifScale = 0.85
+    -- ── NOTIFICATIONS ─────────────────────────────────────────────────────────
+    local notifEnabled  = true
+    local notifScale    = 0.85
     local notifPosition = "Bottom Right"
-    local NOTIF_BASE_W = 290
+    local NOTIF_BASE_W  = 290
 
     local notifyHolder = Instance.new("Frame")
     notifyHolder.AnchorPoint = Vector2.new(1, 1)
@@ -3142,14 +2826,7 @@ function _Catalyst:Window(opt)
         end
     end
 
-    local function applyNotifScale(s)
-        notifScale = s
-        notifUIScale.Scale = s
-    end
-
-    local function isLeftAligned()
-        return notifPosition == "Top Left"
-    end
+    local function applyNotifScale(s) notifScale = s; notifUIScale.Scale = s end
 
     function Window:Notify(title, desc, duration, color)
         if not notifEnabled then return end
@@ -3157,102 +2834,66 @@ function _Catalyst:Window(opt)
         color = color or Theme.Accent
         local hasDesc = desc ~= nil and desc ~= ""
         local H = hasDesc and 84 or 50
-        local openW = NOTIF_BASE_W
-
         local card = Instance.new("Frame")
-        card.Size = UDim2.new(0, 0, 0, H)
-        card.BackgroundColor3 = Theme.Panel
-        card.BackgroundTransparency = 1
-        card.BorderSizePixel = 0
-        card.ClipsDescendants = true
-        card.Parent = notifyHolder
-        corner(card, 8)
+        card.Size = UDim2.new(0, 0, 0, H); card.BackgroundColor3 = Theme.Panel
+        card.BackgroundTransparency = 1; card.BorderSizePixel = 0
+        card.ClipsDescendants = true; card.Parent = notifyHolder; corner(card, 8)
         local st = stroke(card, Theme.Stroke, 1, 1)
 
         local titleLbl = Instance.new("TextLabel")
-        titleLbl.BackgroundTransparency = 1
-        titleLbl.Position = UDim2.new(0, 14, 0, 10)
-        titleLbl.Size = UDim2.new(1, -64, 0, 18)
-        titleLbl.Font = Enum.Font.GothamBold
-        titleLbl.Text = title or "Notice"
-        titleLbl.TextColor3 = Theme.Text
-        titleLbl.TextTransparency = 1
-        titleLbl.TextSize = 14
+        titleLbl.BackgroundTransparency = 1; titleLbl.Position = UDim2.new(0, 14, 0, 10)
+        titleLbl.Size = UDim2.new(1, -64, 0, 18); titleLbl.Font = GlobalFontBold
+        titleLbl.Text = title or "Notice"; titleLbl.TextColor3 = Theme.Text
+        titleLbl.TextTransparency = 1; titleLbl.TextSize = 14
         titleLbl.TextXAlignment = Enum.TextXAlignment.Left
-        titleLbl.TextTruncate = Enum.TextTruncate.AtEnd
-        titleLbl.Parent = card
+        titleLbl.TextTruncate = Enum.TextTruncate.AtEnd; titleLbl.Parent = card
+        tagBold(titleLbl)
 
         local durLbl = Instance.new("TextLabel")
-        durLbl.BackgroundTransparency = 1
-        durLbl.AnchorPoint = Vector2.new(1, 0)
-        durLbl.Position = UDim2.new(1, -14, 0, 10)
-        durLbl.Size = UDim2.new(0, 44, 0, 18)
-        durLbl.Font = GlobalFont
-        durLbl.Text = string.format("%.1fs", duration)
-        durLbl.TextColor3 = Theme.SubText
-        durLbl.TextTransparency = 1
-        durLbl.TextSize = 12
-        durLbl.TextXAlignment = Enum.TextXAlignment.Right
-        durLbl.Parent = card
+        durLbl.BackgroundTransparency = 1; durLbl.AnchorPoint = Vector2.new(1, 0)
+        durLbl.Position = UDim2.new(1, -14, 0, 10); durLbl.Size = UDim2.new(0, 44, 0, 18)
+        durLbl.Font = GlobalFont; durLbl.Text = string.format("%.1fs", duration)
+        durLbl.TextColor3 = Theme.SubText; durLbl.TextTransparency = 1
+        durLbl.TextSize = 12; durLbl.TextXAlignment = Enum.TextXAlignment.Right; durLbl.Parent = card
 
         local descLbl
         if hasDesc then
             descLbl = Instance.new("TextLabel")
-            descLbl.BackgroundTransparency = 1
-            descLbl.Position = UDim2.new(0, 14, 0, 30)
-            descLbl.Size = UDim2.new(1, -28, 0, 32)
-            descLbl.Font = GlobalFont
-            descLbl.Text = desc
-            descLbl.TextColor3 = Theme.SubText
-            descLbl.TextTransparency = 1
-            descLbl.TextSize = 12
-            descLbl.TextWrapped = true
-            descLbl.TextXAlignment = Enum.TextXAlignment.Left
+            descLbl.BackgroundTransparency = 1; descLbl.Position = UDim2.new(0, 14, 0, 30)
+            descLbl.Size = UDim2.new(1, -28, 0, 32); descLbl.Font = GlobalFont
+            descLbl.Text = desc; descLbl.TextColor3 = Theme.SubText
+            descLbl.TextTransparency = 1; descLbl.TextSize = 12
+            descLbl.TextWrapped = true; descLbl.TextXAlignment = Enum.TextXAlignment.Left
             descLbl.TextYAlignment = Enum.TextYAlignment.Top
-            descLbl.TextTruncate = Enum.TextTruncate.AtEnd
-            descLbl.Parent = card
+            descLbl.TextTruncate = Enum.TextTruncate.AtEnd; descLbl.Parent = card
         end
 
         local barBG = Instance.new("Frame")
-        barBG.AnchorPoint = Vector2.new(0, 1)
-        barBG.Position = UDim2.new(0, 14, 1, -10)
-        barBG.Size = UDim2.new(1, -28, 0, 4)
-        barBG.BackgroundColor3 = Theme.Element
-        barBG.BackgroundTransparency = 1
-        barBG.BorderSizePixel = 0
-        barBG.Parent = card
-        corner(barBG, 2)
+        barBG.AnchorPoint = Vector2.new(0, 1); barBG.Position = UDim2.new(0, 14, 1, -10)
+        barBG.Size = UDim2.new(1, -28, 0, 4); barBG.BackgroundColor3 = Theme.Element
+        barBG.BackgroundTransparency = 1; barBG.BorderSizePixel = 0; barBG.Parent = card; corner(barBG, 2)
 
         local bar = Instance.new("Frame")
-        bar.Size = UDim2.new(1, 0, 1, 0)
-        bar.BackgroundColor3 = color
-        bar.BackgroundTransparency = 1
-        bar.BorderSizePixel = 0
-        bar.Parent = barBG
-        corner(bar, 2)
+        bar.Size = UDim2.new(1, 0, 1, 0); bar.BackgroundColor3 = color
+        bar.BackgroundTransparency = 1; bar.BorderSizePixel = 0; bar.Parent = barBG; corner(bar, 2)
 
-        tween(card, 0.3, { Size = UDim2.new(0, openW, 0, H), BackgroundTransparency = 0 }, Enum.EasingStyle.Quart)
+        tween(card, 0.3, { Size = UDim2.new(0, NOTIF_BASE_W, 0, H), BackgroundTransparency = 0 }, Enum.EasingStyle.Quart)
         tween(st, 0.3, { Transparency = 0.4 })
         tween(titleLbl, 0.3, { TextTransparency = 0 })
         tween(durLbl, 0.3, { TextTransparency = 0 })
         if descLbl then tween(descLbl, 0.3, { TextTransparency = 0.1 }) end
         tween(barBG, 0.3, { BackgroundTransparency = 0 })
         tween(bar, 0.3, { BackgroundTransparency = 0 })
-
         tween(bar, duration, { Size = UDim2.new(0, 0, 1, 0) }, Enum.EasingStyle.Linear)
 
         taskLib.spawn(function()
             local remaining = duration
             while remaining > 0 and card.Parent do
-                taskLib.wait(0.1)
-                remaining = remaining - 0.1
+                taskLib.wait(0.1); remaining = remaining - 0.1
                 if remaining < 0 then remaining = 0 end
-                if durLbl.Parent then
-                    durLbl.Text = string.format("%.1fs", remaining)
-                end
+                if durLbl.Parent then durLbl.Text = string.format("%.1fs", remaining) end
             end
         end)
-
         taskLib.spawn(function()
             taskLib.wait(duration + 0.05)
             if not card.Parent then return end
@@ -3263,11 +2904,11 @@ function _Catalyst:Window(opt)
             if descLbl then tween(descLbl, 0.25, { TextTransparency = 1 }) end
             tween(barBG, 0.25, { BackgroundTransparency = 1 })
             tween(bar, 0.25, { BackgroundTransparency = 1 })
-            taskLib.wait(0.3)
-            card:Destroy()
+            taskLib.wait(0.3); card:Destroy()
         end)
     end
 
+    -- ── CONFIG HELPERS ────────────────────────────────────────────────────────
     local function readMeta()
         local raw = FileSystem.read(ConfigFolder .. "/_meta.json")
         if raw then
@@ -3286,18 +2927,55 @@ function _Catalyst:Window(opt)
         local out = {}
         for _, full in ipairs(FileSystem.list(ConfigFolder)) do
             local n = tostring(full):match("([^/\\]+)%.json$")
-            if n and n ~= "_meta" then out[#out + 1] = n end
+            if n and n ~= "_meta" and n ~= "_themes" then out[#out + 1] = n end
         end
         return out
     end
+
+    -- ── CUSTOM THEME PERSISTENCE ──────────────────────────────────────────────
+    local THEMES_FILE = ConfigFolder .. "/_themes.json"
+    local function loadCustomThemes()
+        local raw = FileSystem.read(THEMES_FILE)
+        if not raw then return end
+        local ok, data = pcall(function() return HttpService:JSONDecode(raw) end)
+        if not ok or type(data) ~= "table" then return end
+        for name, tdata in pairs(data) do
+            if not BUILTIN_THEMES[name] and type(tdata) == "table" then
+                local t = {}
+                for _, key in ipairs(THEME_ASPECTS) do
+                    if tdata[key] and type(tdata[key]) == "table" and tdata[key].__c3 then
+                        t[key] = deserialize(tdata[key])
+                    else
+                        t[key] = Theme[key]
+                    end
+                end
+                t.Accent = tdata.Accent and deserialize(tdata.Accent) or Theme.Accent
+                Themes[name] = t
+            end
+        end
+    end
+    local function saveCustomThemes()
+        local data = {}
+        for name, t in pairs(Themes) do
+            if not BUILTIN_THEMES[name] then
+                local td = {}
+                for _, key in ipairs(THEME_ASPECTS) do
+                    td[key] = serialize(t[key])
+                end
+                td.Accent = serialize(t.Accent)
+                data[name] = td
+            end
+        end
+        local ok, json = pcall(function() return HttpService:JSONEncode(data) end)
+        if ok then FileSystem.write(THEMES_FILE, json) end
+    end
+    loadCustomThemes()
 
     local function resolveAccent()
         if _Catalyst._customAccent and _Catalyst.__resolvedAccent then
             return _Catalyst.__resolvedAccent
         end
-        if _Catalyst._customAccent then
-            return Theme.Accent
-        end
+        if _Catalyst._customAccent then return Theme.Accent end
         local tn = _Catalyst.Flags["_theme"]
         local tt = Themes[tn] or Theme
         return tt.Accent or Theme.Accent
@@ -3305,9 +2983,7 @@ function _Catalyst:Window(opt)
 
     local function applyAllVisuals()
         local finalAccent = resolveAccent()
-        for _, fn in ipairs(ThemeListeners) do
-            pcall(fn, Theme)
-        end
+        for _, fn in ipairs(ThemeListeners) do pcall(fn, Theme) end
         relayout(true)
         setAccent(finalAccent)
         if accentPickerRef and accentPickerRef.SetSilent then
@@ -3318,15 +2994,11 @@ function _Catalyst:Window(opt)
     function Window:SaveConfig(name)
         if not name or name == "" then return false end
         local data = {}
-        for flag in pairs(_Catalyst.Config) do
-            data[flag] = serialize(_Catalyst.Flags[flag])
-        end
+        for flag in pairs(_Catalyst.Config) do data[flag] = serialize(_Catalyst.Flags[flag]) end
         local ok, json = pcall(function() return HttpService:JSONEncode(data) end)
         if not ok then return false end
         FileSystem.write(ConfigFolder .. "/" .. name .. ".json", json)
-        writeMeta({ recent = name })
-        applyAllVisuals()
-        return true
+        writeMeta({ recent = name }); applyAllVisuals(); return true
     end
 
     function Window:LoadConfig(name)
@@ -3341,8 +3013,7 @@ function _Catalyst:Window(opt)
         local loadedTheme = nil
         if data["_theme"] ~= nil and _Catalyst.Config["_theme"] then
             loadedTheme = deserialize(data["_theme"])
-            _Catalyst._customAccent = false
-            _Catalyst.Flags["_customaccent"] = false
+            _Catalyst._customAccent = false; _Catalyst.Flags["_customaccent"] = false
             pcall(function() _Catalyst.Config["_theme"].Set(loadedTheme) end)
         end
 
@@ -3358,15 +3029,13 @@ function _Catalyst:Window(opt)
             and (_Catalyst.Config["_accent"] ~= nil)
 
         if wantsCustom then
-            _Catalyst._customAccent = true
-            _Catalyst.Flags["_customaccent"] = true
+            _Catalyst._customAccent = true; _Catalyst.Flags["_customaccent"] = true
             local savedAccent = deserialize(data["_accent"])
             _Catalyst.__resolvedAccent = savedAccent
             pcall(function() _Catalyst.Config["_accent"].Set(savedAccent) end)
             if _Catalyst.__accentSilent then _Catalyst.__accentSilent(savedAccent) end
         else
-            _Catalyst._customAccent = false
-            _Catalyst.Flags["_customaccent"] = false
+            _Catalyst._customAccent = false; _Catalyst.Flags["_customaccent"] = false
             _Catalyst.__resolvedAccent = nil
             local themeName = (type(loadedTheme) == "string" and loadedTheme) or _Catalyst.Flags["_theme"]
             local tt = Themes[themeName] or Theme
@@ -3375,104 +3044,99 @@ function _Catalyst:Window(opt)
             if _Catalyst.__accentSilent then _Catalyst.__accentSilent(themeAccent) end
         end
 
-        writeMeta({ recent = name })
-        applyAllVisuals()
-        return true
+        writeMeta({ recent = name }); applyAllVisuals(); return true
     end
 
     function Window:DeleteConfig(name)
         if not name or name == "" then return false end
-        FileSystem.delete(ConfigFolder .. "/" .. name .. ".json")
-        return true
+        FileSystem.delete(ConfigFolder .. "/" .. name .. ".json"); return true
     end
     function Window:GetConfigs() return getConfigList() end
+
     function Window:ResetDefaults()
         if _Catalyst.Config["_theme"] then
             _Catalyst._customAccent = false
             pcall(_Catalyst.Config["_theme"].Set, _Catalyst.Config["_theme"].Default)
         end
         for flag, c in pairs(_Catalyst.Config) do
-            if flag ~= "_theme" and flag ~= "_accent" then
-                pcall(c.Set, c.Default)
-            end
+            if flag ~= "_theme" and flag ~= "_accent" then pcall(c.Set, c.Default) end
         end
         if _Catalyst.__optAccent then
-            _Catalyst._customAccent = true
-            _Catalyst.Flags["_customaccent"] = true
+            _Catalyst._customAccent = true; _Catalyst.Flags["_customaccent"] = true
             if _Catalyst.Config["_accent"] then
                 pcall(_Catalyst.Config["_accent"].Set, _Catalyst.__optAccent)
-            else
-                setAccent(_Catalyst.__optAccent)
-            end
+            else setAccent(_Catalyst.__optAccent) end
         elseif _Catalyst.Config["_accent"] then
             pcall(_Catalyst.Config["_accent"].Set, _Catalyst.Config["_accent"].Default)
         end
         applyAllVisuals()
     end
 
-    -- =========================================================
-    -- SETTINGS PANEL
-    -- =========================================================
+    -- ── SETTINGS PANEL ────────────────────────────────────────────────────────
     local settingsScroll = Instance.new("ScrollingFrame")
-    settingsScroll.Size = UDim2.new(1, 0, 1, 0)
-    settingsScroll.BackgroundTransparency = 1
-    settingsScroll.BorderSizePixel = 0
-    settingsScroll.ScrollBarThickness = 4
-    settingsScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-    settingsScroll.Parent = settingsPanel.body
+    settingsScroll.Size = UDim2.new(1, 0, 1, 0); settingsScroll.BackgroundTransparency = 1
+    settingsScroll.BorderSizePixel = 0; settingsScroll.ScrollBarThickness = 4
+    settingsScroll.CanvasSize = UDim2.new(0, 0, 0, 0); settingsScroll.Parent = settingsPanel.body
     regAccent(settingsScroll, "ScrollBarImageColor3")
     local sApi = makeAPI(settingsScroll)
 
     local currentName = ""
     local cfgDrop
     local accentPicker
+    local themeDrop       -- the ui theme dropdown — refreshed when custom themes change
     local startAccent = _Catalyst._customAccent and Theme.Accent or (opt.Accent or Theme.Accent)
 
+    -- Helper: build the full ordered theme list for the dropdown
+    local function buildThemeList()
+        local list = { "GX", "Discord", "Light" }
+        for name in pairs(Themes) do
+            if not BUILTIN_THEMES[name] then list[#list + 1] = name end
+        end
+        table.sort(list, function(a, b)
+            local ai = BUILTIN_THEMES[a] and 0 or 1
+            local bi = BUILTIN_THEMES[b] and 0 or 1
+            if ai ~= bi then return ai < bi end
+            return a < b
+        end)
+        return list
+    end
+
+    -- ── INTERFACE SECTION ─────────────────────────────────────────────────────
     sApi:Section("Interface")
     sApi:Slider("UI Scale", "Resize the whole interface", 50, 150, 88, function(v)
-        userScale = v / 100
-        applyScale()
+        userScale = v / 100; applyScale()
     end, "_uiscale", { Suffix = " %" })
     sApi:Toggle("Streamer Mode", "Hide watermark when UI is closed", false, function(on)
         streamerMode = on
-        if wmVisible then
-            if streamerMode then
-                wmFrame.Visible = isOpen
-            else
-                wmFrame.Visible = true
-            end
-        end
+        if wmVisible then wmFrame.Visible = streamerMode and isOpen or true end
     end, "_streamermode")
-    sApi:Bind("Toggle UI Key", ToggleKey, function()
-        toggleUI()
-    end, "_togglekey", { NoList = true })
+    sApi:Bind("Toggle UI Key", ToggleKey, function() toggleUI() end, "_togglekey", { NoList = true })
 
+    -- ── APPEARANCE SECTION ────────────────────────────────────────────────────
     sApi:Section("Appearance")
-    sApi:Dropdown("UI Theme", { "GX", "Discord", "Light" }, function(v)
-        _Catalyst._customAccent = false
-        _Catalyst.Flags["_customaccent"] = false
+
+    -- UI Theme dropdown (refreshable)
+    themeDrop = sApi:Dropdown("UI Theme", buildThemeList(), function(v)
+        _Catalyst._customAccent = false; _Catalyst.Flags["_customaccent"] = false
         _Catalyst.__resolvedAccent = nil
         applyTheme(v)
-        if accentPicker and accentPicker.SetSilent then
-            accentPicker.SetSilent(Theme.Accent)
-        end
+        if accentPicker and accentPicker.SetSilent then accentPicker.SetSilent(Theme.Accent) end
     end, "_theme", "GX")
 
+    -- Accent Color picker
     accentPicker = sApi:Colorpicker("Accent Color", startAccent, function(c)
-        _Catalyst._customAccent = true
-        _Catalyst.Flags["_customaccent"] = true
-        _Catalyst.__resolvedAccent = c
-        setAccent(c)
+        _Catalyst._customAccent = true; _Catalyst.Flags["_customaccent"] = true
+        _Catalyst.__resolvedAccent = c; setAccent(c)
     end, "_accent")
 
     accentPickerRef = accentPicker
     _Catalyst.__accentSilent = accentPicker.SetSilent
 
-    -- ---- TEXT FONT DROPDOWN ----
+    -- ── TEXT FONT ─────────────────────────────────────────────────────────────
     sApi:Dropdown("Text Font", FONT_OPTIONS, function(v)
         local ok, fe = pcall(function() return Enum.Font[v] end)
         if ok and fe then
-            setGlobalFont(fe)
+            applyGlobalFont(fe)
             _Catalyst.Flags["_font"] = v
         end
     end, "_font", "GothamMedium")
@@ -3481,15 +3145,17 @@ function _Catalyst:Window(opt)
         Get     = function() return GlobalFont.Name end,
         Set     = function(v)
             local ok, fe = pcall(function() return Enum.Font[tostring(v)] end)
-            if ok and fe then setGlobalFont(fe) end
+            if ok and fe then applyGlobalFont(fe) end
         end,
         Default = "GothamMedium",
     }
     _Catalyst.Flags["_font"] = "GothamMedium"
 
-    -- ---- ELEMENT PADDING SLIDER ----
-    sApi:Slider("Element Padding", "Adjust inner padding on cards and elements", 2, 16, 6, function(v)
-        setGlobalPadding(v)
+    -- ── ELEMENT PADDING ───────────────────────────────────────────────────────
+    -- Controls UIListLayout.Padding on all content scroll areas — visibly changes
+    -- the gap between cards when dragged.
+    sApi:Slider("Element Padding", "Gap between cards and elements", 2, 16, 6, function(v)
+        applyGlobalPadding(v)
         _Catalyst.Flags["_padding"] = v
     end, "_padding", { Suffix = " px" })
 
@@ -3497,17 +3163,143 @@ function _Catalyst:Window(opt)
         Get     = function() return GlobalPadding end,
         Set     = function(v)
             local n = tonumber(v)
-            if n then setGlobalPadding(math.clamp(n, 2, 16)) end
+            if n then applyGlobalPadding(math.clamp(math.floor(n), 2, 16)) end
         end,
         Default = 6,
     }
     _Catalyst.Flags["_padding"] = 6
 
-    -- ---- END NEW SETTINGS ----
+    -- ── CUSTOM THEME BUILDER ──────────────────────────────────────────────────
+    sApi:Section("Custom Theme")
+    sApi:Label("Build your own theme below. Accent is set above per-theme.")
 
+    -- Draft colors start from current theme
+    local draft = {}
+    for _, k in ipairs(THEME_ASPECTS) do draft[k] = Theme[k] end
+    local draftAccent = Theme.Accent
+
+    local aspectPickers = {}
+    for _, aspect in ipairs(THEME_ASPECTS) do
+        local picker = sApi:Colorpicker(aspect, draft[aspect], function(c)
+            draft[aspect] = c
+        end)
+        aspectPickers[aspect] = picker
+    end
+    -- Accent draft picker
+    local draftAccentPicker = sApi:Colorpicker("Theme Accent", draftAccent, function(c)
+        draftAccent = c
+    end)
+
+    local nameBox2 = sApi:Textbox("Theme Name", "Enter a name", false, function(t) end)
+
+    -- Helper: sync draft pickers to current theme values
+    local function syncDraftFromTheme()
+        for _, k in ipairs(THEME_ASPECTS) do
+            draft[k] = Theme[k]
+            if aspectPickers[k] then aspectPickers[k].SetSilent(Theme[k]) end
+        end
+        draftAccent = Theme.Accent
+        if draftAccentPicker then draftAccentPicker.SetSilent(Theme.Accent) end
+    end
+
+    -- When built-in theme changes, sync the draft so the editor shows useful defaults
+    onTheme(syncDraftFromTheme)
+
+    local customThemeEditDrop   -- dropdown for selecting which custom theme to delete/update
+
+    local function refreshCustomThemeDropdown()
+        if not customThemeEditDrop then return end
+        local custom = {}
+        for name in pairs(Themes) do
+            if not BUILTIN_THEMES[name] then custom[#custom + 1] = name end
+        end
+        table.sort(custom)
+        customThemeEditDrop.Refresh(custom)
+    end
+
+    sApi:Button("Save as New Theme", "Create a new theme from current draft colors", function()
+        local tname = nameBox2.Get()
+        if tname == "" then
+            Window:Notify("Theme", "Enter a theme name first.")
+            return
+        end
+        if BUILTIN_THEMES[tname] then
+            Window:Notify("Theme", "'" .. tname .. "' is a built-in and cannot be overwritten.")
+            return
+        end
+        local newTheme = { Accent = draftAccent }
+        for _, k in ipairs(THEME_ASPECTS) do newTheme[k] = draft[k] end
+        Themes[tname] = newTheme
+        saveCustomThemes()
+        themeDrop.Refresh(buildThemeList())
+        refreshCustomThemeDropdown()
+        Window:Notify("Theme", "Saved theme '" .. tname .. "'")
+    end)
+
+    sApi:Label("Select a custom theme below to update or delete it.")
+
+    do
+        local selectedCustomTheme = ""
+
+        customThemeEditDrop = sApi:Dropdown("Custom Themes", {}, function(v)
+            selectedCustomTheme = v
+            -- Load that theme's colors into the draft
+            if Themes[v] then
+                for _, k in ipairs(THEME_ASPECTS) do
+                    draft[k] = Themes[v][k] or Theme[k]
+                    if aspectPickers[k] then aspectPickers[k].SetSilent(draft[k]) end
+                end
+                draftAccent = Themes[v].Accent or Theme.Accent
+                if draftAccentPicker then draftAccentPicker.SetSilent(draftAccent) end
+            end
+        end)
+
+        sApi:Button("Update Selected Theme", "Overwrite selected custom theme with current draft", function()
+            if selectedCustomTheme == "" or BUILTIN_THEMES[selectedCustomTheme] then
+                Window:Notify("Theme", "Select a custom theme to update.")
+                return
+            end
+            local t = { Accent = draftAccent }
+            for _, k in ipairs(THEME_ASPECTS) do t[k] = draft[k] end
+            Themes[selectedCustomTheme] = t
+            saveCustomThemes()
+            -- If this theme is currently active, re-apply it
+            if _Catalyst.Flags["_theme"] == selectedCustomTheme then
+                applyTheme(selectedCustomTheme)
+            end
+            themeDrop.Refresh(buildThemeList())
+            Window:Notify("Theme", "Updated '" .. selectedCustomTheme .. "'")
+        end)
+
+        sApi:Button("Delete Selected Theme", "Remove selected custom theme permanently", function()
+            if selectedCustomTheme == "" then
+                Window:Notify("Theme", "Select a custom theme to delete.")
+                return
+            end
+            if BUILTIN_THEMES[selectedCustomTheme] then
+                Window:Notify("Theme", "Cannot delete a built-in theme.")
+                return
+            end
+            Themes[selectedCustomTheme] = nil
+            saveCustomThemes()
+            themeDrop.Refresh(buildThemeList())
+            refreshCustomThemeDropdown()
+            selectedCustomTheme = ""
+            -- If deleted theme was active, fall back to GX
+            if _Catalyst.Flags["_theme"] == selectedCustomTheme then
+                themeDrop.Set("GX")
+            end
+            Window:Notify("Theme", "Deleted theme.")
+        end)
+
+        -- Initial populate
+        refreshCustomThemeDropdown()
+    end
+
+    -- ── Wire up Config entries for accent ─────────────────────────────────────
     _Catalyst.Config["_customaccent"] = {
-        Get     = function() return _Catalyst._customAccent and true or false end,
-        Set     = function(_) end,
+        Get = function() return _Catalyst._customAccent and true or false end,
+        Set = function(_) end,
         Default = false,
     }
     _Catalyst.Flags["_customaccent"] = _Catalyst._customAccent and true or false
@@ -3515,10 +3307,8 @@ function _Catalyst:Window(opt)
     do
         local origSet = _Catalyst.Config["_accent"].Set
         _Catalyst.Config["_accent"].Set = function(c)
-            _Catalyst._customAccent = true
-            _Catalyst.Flags["_customaccent"] = true
-            _Catalyst.__resolvedAccent = c
-            origSet(c)
+            _Catalyst._customAccent = true; _Catalyst.Flags["_customaccent"] = true
+            _Catalyst.__resolvedAccent = c; origSet(c)
         end
         _Catalyst.Config["_accent"].Default = opt.Accent or _Catalyst.Config["_accent"].Default
     end
@@ -3526,11 +3316,10 @@ function _Catalyst:Window(opt)
     if _Catalyst._customAccent then
         _Catalyst.__resolvedAccent = Theme.Accent
         setAccent(Theme.Accent)
-        if accentPicker and accentPicker.SetSilent then
-            accentPicker.SetSilent(Theme.Accent)
-        end
+        if accentPicker and accentPicker.SetSilent then accentPicker.SetSilent(Theme.Accent) end
     end
 
+    -- ── REMAINING SETTINGS ────────────────────────────────────────────────────
     sApi:Section("Keybind List")
     sApi:Toggle("Show Keybind List", "Display active keybinds on screen", true, function(on)
         setKeybindListVisible(on)
@@ -3563,24 +3352,16 @@ function _Catalyst:Window(opt)
     do
         _Catalyst.Config["_wmpos"] = {
             Get = function()
-                return {
-                    sx = wmFrame.Position.X.Scale,
-                    ox = wmFrame.Position.X.Offset,
-                    sy = wmFrame.Position.Y.Scale,
-                    oy = wmFrame.Position.Y.Offset,
-                }
+                return { sx = wmFrame.Position.X.Scale, ox = wmFrame.Position.X.Offset,
+                         sy = wmFrame.Position.Y.Scale, oy = wmFrame.Position.Y.Offset }
             end,
             Set = function(v)
                 if type(v) == "table" and v.sx ~= nil then
                     wmFrame.Position = UDim2.new(v.sx, v.ox, v.sy, v.oy)
                 end
             end,
-            Default = {
-                sx = WM_DEFAULT_POS.X.Scale,
-                ox = WM_DEFAULT_POS.X.Offset,
-                sy = WM_DEFAULT_POS.Y.Scale,
-                oy = WM_DEFAULT_POS.Y.Offset,
-            },
+            Default = { sx = WM_DEFAULT_POS.X.Scale, ox = WM_DEFAULT_POS.X.Offset,
+                        sy = WM_DEFAULT_POS.Y.Scale, oy = WM_DEFAULT_POS.Y.Offset },
         }
         _Catalyst.Flags["_wmpos"] = _Catalyst.Config["_wmpos"].Default
     end
@@ -3599,23 +3380,16 @@ function _Catalyst:Window(opt)
     sApi:Section("Configuration")
     local nameBox = sApi:Textbox("Config Name", "", false, function(t) currentName = t end)
     cfgDrop = sApi:Dropdown("Saved Configs", getConfigList(), function(v)
-        currentName = v
-        nameBox.Set(v)
+        currentName = v; nameBox.Set(v)
     end)
     sApi:Button("Save Config", "Write current settings to a file", function()
-        if currentName == "" then
-            Window:Notify("Config", "Type a config name first.")
-            return
-        end
+        if currentName == "" then Window:Notify("Config", "Type a config name first."); return end
         local ok = Window:SaveConfig(currentName)
         cfgDrop.Refresh(getConfigList())
         Window:Notify("Config", ok and ("Saved '" .. currentName .. "'") or "Save failed.")
     end)
     sApi:Button("Load Config", "Apply settings from the selected file", function()
-        if currentName == "" then
-            Window:Notify("Config", "Select or type a config name first.")
-            return
-        end
+        if currentName == "" then Window:Notify("Config", "Select or type a config name first."); return end
         local ok = Window:LoadConfig(currentName)
         cfgDrop.Refresh(getConfigList())
         Window:Notify("Config", ok and ("Loaded '" .. currentName .. "'") or "Load failed.")
@@ -3629,9 +3403,7 @@ function _Catalyst:Window(opt)
 
     local meta0 = readMeta()
     sApi:Toggle("Auto-load Recent", "Load the last used config on launch",
-        meta0.autoload ~= false, function(on)
-            writeMeta({ autoload = on })
-        end)
+        meta0.autoload ~= false, function(on) writeMeta({ autoload = on }) end)
     sApi:Button("Reset to Defaults", "Restore every option to default values", function()
         Window:ResetDefaults()
         Window:Notify("Config", "All settings reset to defaults.")
@@ -3644,34 +3416,25 @@ function _Catalyst:Window(opt)
 
     if IS_MOBILE then
         local fab = Instance.new("TextButton")
-        fab.Size = UDim2.new(0, 48, 0, 48)
-        fab.Position = UDim2.new(0, 16, 0.5, -24)
-        fab.BackgroundColor3 = Theme.Panel
-        fab.AutoButtonColor = false
-        fab.Text = "CX"
-        fab.Font = Enum.Font.GothamBold
-        fab.TextColor3 = Theme.Text
-        fab.TextSize = 16
-        fab.Parent = ScreenGui
-        corner(fab, 24)
-        local ring = Instance.new("UIStroke")
-        ring.Thickness = 2
-        ring.Parent = fab
+        fab.Size = UDim2.new(0, 48, 0, 48); fab.Position = UDim2.new(0, 16, 0.5, -24)
+        fab.BackgroundColor3 = Theme.Panel; fab.AutoButtonColor = false
+        fab.Text = "CX"; fab.Font = GlobalFontBold
+        fab.TextColor3 = Theme.Text; fab.TextSize = 16; fab.Parent = ScreenGui
+        corner(fab, 24); tagBold(fab)
+        local ring = Instance.new("UIStroke"); ring.Thickness = 2; ring.Parent = fab
         regAccent(ring, "Color")
 
         local dragging, moved, startInput, startPos = false, false, nil, nil
         fab.InputBegan:Connect(function(i)
             if i.UserInputType == Enum.UserInputType.MouseButton1
             or i.UserInputType == Enum.UserInputType.Touch then
-                dragging, moved = true, false
-                startInput, startPos = i.Position, fab.Position
+                dragging, moved = true, false; startInput, startPos = i.Position, fab.Position
             end
         end)
         fab.InputEnded:Connect(function(i)
             if i.UserInputType == Enum.UserInputType.MouseButton1
             or i.UserInputType == Enum.UserInputType.Touch then
-                dragging = false
-                if not moved then toggleUI() end
+                dragging = false; if not moved then toggleUI() end
             end
         end)
         UserInputService.InputChanged:Connect(function(i)
@@ -3682,33 +3445,30 @@ function _Catalyst:Window(opt)
                 if delta.Magnitude > 6 then moved = true end
                 fab.Position = UDim2.new(
                     startPos.X.Scale, startPos.X.Offset + delta.X,
-                    startPos.Y.Scale, startPos.Y.Offset + delta.Y
-                )
+                    startPos.Y.Scale, startPos.Y.Offset + delta.Y)
             end
         end)
     end
 
+    -- ── INIT ──────────────────────────────────────────────────────────────────
     local didInit = false
     function Window:Init()
         if didInit then return end
         didInit = true
         cfgDrop.Refresh(getConfigList())
         local meta = readMeta()
-        local loaded = false
-        local loadedCustomAccent = false
+        local loaded, loadedCustomAccent = false, false
         if meta.autoload ~= false and meta.recent then
             local ok = Window:LoadConfig(meta.recent)
             if ok then
                 loaded = true
                 loadedCustomAccent = _Catalyst._customAccent and true or false
-                currentName = meta.recent
-                nameBox.Set(meta.recent)
+                currentName = meta.recent; nameBox.Set(meta.recent)
                 Window:Notify("Config", "Auto-loaded '" .. meta.recent .. "'")
             end
         end
         if _Catalyst.__optAccent and (not loaded or not loadedCustomAccent) then
-            _Catalyst._customAccent = true
-            _Catalyst.Flags["_customaccent"] = true
+            _Catalyst._customAccent = true; _Catalyst.Flags["_customaccent"] = true
             _Catalyst.__resolvedAccent = _Catalyst.__optAccent
             setAccent(_Catalyst.__optAccent)
             if accentPicker and accentPicker.SetSilent then
@@ -3731,6 +3491,16 @@ function _Catalyst:Window(opt)
         if alive() and not didInit then Window:Init() end
     end)
 
+    -- Toggle key listener
+    UserInputService.InputBegan:Connect(function(i, gpe)
+        if not alive() then return end
+        if gpe then return end
+        local toggleKey = _Catalyst.Flags["_togglekey"] or keyNameOf(ToggleKey)
+        if i.KeyCode ~= Enum.KeyCode.Unknown and i.KeyCode.Name == toggleKey then
+            toggleUI()
+        end
+    end)
+
     Window.SetAccent             = setAccent
     Window.SetTheme              = applyTheme
     Window.Toggle                = toggleUI
@@ -3740,8 +3510,8 @@ function _Catalyst:Window(opt)
     Window.SetWatermarkVisible   = setWatermarkVisible
     Window.SetKeybindListVisible = setKeybindListVisible
     Window.RefreshVisuals        = function() applyAllVisuals() end
-    Window.SetFont               = setGlobalFont
-    Window.SetPadding            = setGlobalPadding
+    Window.SetFont               = applyGlobalFont
+    Window.SetPadding            = applyGlobalPadding
 
     relayout(false)
     computeFit()
