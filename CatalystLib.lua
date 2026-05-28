@@ -2427,7 +2427,7 @@ function _Catalyst:Window(opt)
             local t = os.date("*t")
             local dateStr = string.format("%02d/%02d/%04d",
                 t.month, t.day, t.year)
-                
+
             wmSub.Text = getClientId() .. "  |  " .. dateStr
             taskLib.wait(1)
         end
@@ -2955,100 +2955,101 @@ function _Catalyst:Window(opt)
         return true
     end
 
-function Window:LoadConfig(name)
-    if not name or name == "" then
-        return false
-    end
+    function Window:LoadConfig(name)
+        if not name or name == "" then
+            return false
+        end
 
-    local path = ConfigFolder .. "/" .. name .. ".json"
+        local path = ConfigFolder .. "/" .. name .. ".json"
 
-    if not FileSystem.exists(path) then
-        return false
-    end
+        if not FileSystem.exists(path) then
+            return false
+        end
 
-    local raw = FileSystem.read(path)
+        local raw = FileSystem.read(path)
 
-    if not raw then
-        return false
-    end
+        if not raw then
+            return false
+        end
 
-    local ok, data = pcall(function()
-        return HttpService:JSONDecode(raw)
-    end)
-
-    if not ok or type(data) ~= "table" then
-        return false
-    end
-
-    local loadedTheme = nil
-
-    -- load theme first
-    if data["_theme"] ~= nil and _Catalyst.Config["_theme"] then
-        loadedTheme = deserialize(data["_theme"])
-
-        _Catalyst._customAccent = false
-
-        pcall(function()
-            _Catalyst.Config["_theme"].Set(loadedTheme)
+        local ok, data = pcall(function()
+            return HttpService:JSONDecode(raw)
         end)
-    end
 
-    -- load all other flags
-    for flag, val in pairs(data) do
-        if flag ~= "_theme"
-        and flag ~= "_accent"
-        and flag ~= "_customaccent" then
+        if not ok or type(data) ~= "table" then
+            return false
+        end
 
-            local c = _Catalyst.Config[flag]
+        local loadedTheme = nil
 
-            if c then
-                pcall(function()
-                    c.Set(deserialize(val))
-                end)
+        if data["_theme"] ~= nil and _Catalyst.Config["_theme"] then
+            loadedTheme = deserialize(data["_theme"])
+
+            _Catalyst._customAccent = false
+            _Catalyst.Flags["_customaccent"] = false
+
+            pcall(function()
+                _Catalyst.Config["_theme"].Set(loadedTheme)
+            end)
+        end
+
+        for flag, val in pairs(data) do
+            if flag ~= "_theme"
+            and flag ~= "_accent"
+            and flag ~= "_customaccent" then
+
+                local c = _Catalyst.Config[flag]
+
+                if c then
+                    pcall(function()
+                        c.Set(deserialize(val))
+                    end)
+                end
             end
         end
-    end
 
-    local wantsCustom = data["_customaccent"] == true
+        local wantsCustom = (data["_customaccent"] == true)
+            and (data["_accent"] ~= nil)
+            and (_Catalyst.Config["_accent"] ~= nil)
 
-    -- custom accent
-    if wantsCustom
-    and data["_accent"] ~= nil
-    and _Catalyst.Config["_accent"] then
+        if wantsCustom then
+            _Catalyst._customAccent = true
+            _Catalyst.Flags["_customaccent"] = true
 
-        _Catalyst._customAccent = true
-        _Catalyst.Flags["_customaccent"] = true
+            local savedAccent = deserialize(data["_accent"])
 
-        pcall(function()
-            _Catalyst.Config["_accent"].Set(
-                deserialize(data["_accent"])
-            )
-        end)
+            pcall(function()
+                _Catalyst.Config["_accent"].Set(savedAccent)
+            end)
 
-    else
-        -- use theme accent
-        _Catalyst._customAccent = false
-        _Catalyst.Flags["_customaccent"] = false
-
-        local tt = Themes[loadedTheme] or Theme
-        local themeAccent = tt.Accent or Theme.Accent
-
-        -- apply silently if supported
-        if _Catalyst.__accentSilent then
-            _Catalyst.__accentSilent(themeAccent)
+            if _Catalyst.__accentSilent then
+                _Catalyst.__accentSilent(savedAccent)
+            end
         else
+            _Catalyst._customAccent = false
+            _Catalyst.Flags["_customaccent"] = false
+
+            local themeName = (type(loadedTheme) == "string" and loadedTheme)
+                or _Catalyst.Flags["_theme"]
+            local tt = Themes[themeName] or Theme
+            local themeAccent = tt.Accent or Theme.Accent
+
             setAccent(themeAccent)
+
+            if _Catalyst.__accentSilent then
+                _Catalyst.__accentSilent(themeAccent)
+            end
         end
+
+        writeMeta({
+            recent = name
+        })
+
+        applyAllVisuals()
+
+        return true
     end
 
-    writeMeta({
-        recent = name
-    })
-
-    applyAllVisuals()
-
-    return true
-end
     function Window:DeleteConfig(name)
         if not name or name == "" then return false end
         FileSystem.delete(ConfigFolder .. "/" .. name .. ".json")
