@@ -1956,8 +1956,10 @@ function _Catalyst:Window(opt)
         local aggOrder = 0
         local function aggNext() aggOrder = aggOrder + 1 return aggOrder end
 
+        local tabHeaderPool = 0
         local function makeTabHeader(text)
-            local f = tabHeaders[#tabHeaders + 1]
+            tabHeaderPool = tabHeaderPool + 1
+            local f = tabHeaders[tabHeaderPool]
             if not f then
                 f = Instance.new("TextLabel")
                 f.BackgroundTransparency = 1
@@ -1967,7 +1969,7 @@ function _Catalyst:Window(opt)
                 f.TextXAlignment = Enum.TextXAlignment.Left
                 f.TextTruncate = Enum.TextTruncate.AtEnd
                 f.Parent = aggScroll
-                tabHeaders[#tabHeaders] = f
+                tabHeaders[tabHeaderPool] = f
             end
             f.Text = string.upper(text)
             f.TextColor3 = Theme.Text
@@ -2045,6 +2047,7 @@ function _Catalyst:Window(opt)
             restoreBorrowed()
             hideAggHeaders()
             headerPool = 0
+            tabHeaderPool = 0
             aggOrder = 0
             for _, t in ipairs(tabs) do t.container.Visible = false end
             aggScroll.Visible = true
