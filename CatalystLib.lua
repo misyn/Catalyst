@@ -1666,7 +1666,6 @@ function _Catalyst:Window(opt)
     _Catalyst.__optAccent = opt.Accent
     if opt.Accent then
         _Catalyst._customAccent = true
-        _Catalyst._customAccentColor = opt.Accent
         _Catalyst.Flags["_customaccent"] = true
         setAccent(opt.Accent)
     end
@@ -1698,7 +1697,7 @@ function _Catalyst:Window(opt)
     uiScale.Scale = 0
     uiScale.Parent = MainFrame
 
-    local fitScale, userScale, isOpen = 1, 0.89, true
+    local fitScale, userScale, isOpen = 1, 0.88, true
     local function targetScale() return fitScale * userScale end
     local function computeFit()
         local cam = workspace.CurrentCamera
@@ -1774,14 +1773,10 @@ function _Catalyst:Window(opt)
         header.Parent = f
 
         local accentLine = Instance.new("Frame")
-        accentLine.AnchorPoint = Vector2.new(0.5, 0)
-        accentLine.Position = UDim2.new(0.5, 0, 0, 2)
-        accentLine.Size = UDim2.new(1, -16, 0, 3)
+        accentLine.Size = UDim2.new(1, 0, 0, 2)
         accentLine.BorderSizePixel = 0
         accentLine.BackgroundColor3 = Theme.Accent
-        accentLine.ZIndex = 2
         accentLine.Parent = header
-        corner(accentLine, 3)
         regAccent(accentLine, "BackgroundColor3")
 
         local grip = Instance.new("TextLabel")
@@ -2044,7 +2039,7 @@ function _Catalyst:Window(opt)
     local function makeZoneFrame()
         local z = Instance.new("Frame")
         z.BackgroundColor3 = Theme.Header
-        z.BackgroundTransparency = 1
+        z.BackgroundTransparency = 0.15
         z.BorderSizePixel = 0
         z.Visible = false
         z.ZIndex = 30
@@ -2336,26 +2331,26 @@ function _Catalyst:Window(opt)
     local wmLabel = Instance.new("TextLabel")
     wmLabel.BackgroundTransparency = 1
     wmLabel.Position = UDim2.new(0, 54, 0, 7)
-    wmLabel.Size = UDim2.new(1, -66, 0, 18)
+    wmLabel.Size = UDim2.new(1, -62, 0, 18)
     wmLabel.Font = Enum.Font.GothamBold
     wmLabel.Text = PLAYER_NAME
     wmLabel.TextColor3 = Theme.Text
     wmLabel.TextSize = 13
     wmLabel.TextXAlignment = Enum.TextXAlignment.Left
-    wmLabel.TextTruncate = Enum.TextTruncate.None
+    wmLabel.TextTruncate = Enum.TextTruncate.AtEnd
     wmLabel.ZIndex = 101
     wmLabel.Parent = wmFrame
 
     local wmSub = Instance.new("TextLabel")
     wmSub.BackgroundTransparency = 1
     wmSub.Position = UDim2.new(0, 54, 0, 28)
-    wmSub.Size = UDim2.new(1, -66, 0, 16)
+    wmSub.Size = UDim2.new(1, -62, 0, 16)
     wmSub.Font = Enum.Font.Gotham
     wmSub.Text = ""
     wmSub.TextColor3 = Theme.SubText
     wmSub.TextSize = 10
     wmSub.TextXAlignment = Enum.TextXAlignment.Left
-    wmSub.TextTruncate = Enum.TextTruncate.None
+    wmSub.TextTruncate = Enum.TextTruncate.AtEnd
     wmSub.ZIndex = 101
     wmSub.Parent = wmFrame
 
@@ -2366,7 +2361,6 @@ function _Catalyst:Window(opt)
         wmImage.BackgroundColor3 = Theme.Element
     end)
 
-    local fitWatermark
     local function applyWmScale(s)
         wmScale = s
         wmUIScale.Scale = s
@@ -2378,7 +2372,6 @@ function _Catalyst:Window(opt)
         else
             wmLabel.Text = PLAYER_NAME
         end
-        if fitWatermark then fitWatermark() end
     end
     local function setWatermarkImage(t)
         wmImage.Image = resolveImage(t)
@@ -2429,21 +2422,12 @@ function _Catalyst:Window(opt)
         end
     end)
 
-    function fitWatermark()
-        local nameW = wmLabel.TextBounds.X
-        local subW = wmSub.TextBounds.X
-        local widest = math.max(nameW, subW)
-        local want = 54 + widest + 14
-        wmFrame.Size = UDim2.fromOffset(math.max(wmBaseW, math.ceil(want)), wmBaseH)
-    end
-
     taskLib.spawn(function()
         while alive() do
             local t = os.date("*t")
             local dateStr = string.format("%02d/%02d/%04d %02d:%02d:%02d",
                 t.month, t.day, t.year, t.hour, t.min, t.sec)
             wmSub.Text = getClientId() .. "  |  " .. dateStr
-            fitWatermark()
             taskLib.wait(1)
         end
     end)
@@ -2944,7 +2928,7 @@ function _Catalyst:Window(opt)
 
     local function applyAllVisuals()
         if _Catalyst._customAccent then
-            setAccent(_Catalyst._customAccentColor or Theme.Accent)
+            setAccent(Theme.Accent)
         else
             local tn = _Catalyst.Flags["_theme"]
             local tt = Themes[tn] or Theme
@@ -2991,12 +2975,10 @@ function _Catalyst:Window(opt)
         local wantsCustom = data["_customaccent"] == true
         if wantsCustom and data["_accent"] ~= nil and _Catalyst.Config["_accent"] then
             _Catalyst._customAccent = true
-            _Catalyst._customAccentColor = deserialize(data["_accent"])
             _Catalyst.Flags["_customaccent"] = true
             pcall(_Catalyst.Config["_accent"].Set, deserialize(data["_accent"]))
         else
             _Catalyst._customAccent = false
-            _Catalyst._customAccentColor = nil
             _Catalyst.Flags["_customaccent"] = false
             local tn = _Catalyst.Flags["_theme"]
             local tt = Themes[tn] or Theme
@@ -3021,7 +3003,6 @@ function _Catalyst:Window(opt)
     function Window:ResetDefaults()
         if _Catalyst.Config["_theme"] then
             _Catalyst._customAccent = false
-            _Catalyst._customAccentColor = nil
             pcall(_Catalyst.Config["_theme"].Set, _Catalyst.Config["_theme"].Default)
         end
         for flag, c in pairs(_Catalyst.Config) do
@@ -3031,7 +3012,6 @@ function _Catalyst:Window(opt)
         end
         if _Catalyst.__optAccent then
             _Catalyst._customAccent = true
-            _Catalyst._customAccentColor = _Catalyst.__optAccent
             _Catalyst.Flags["_customaccent"] = true
             if _Catalyst.Config["_accent"] then
                 pcall(_Catalyst.Config["_accent"].Set, _Catalyst.__optAccent)
@@ -3060,28 +3040,17 @@ function _Catalyst:Window(opt)
     local startAccent = _Catalyst._customAccent and Theme.Accent or (opt.Accent or Theme.Accent)
 
     sApi:Section("Interface")
-    sApi:Slider("UI Scale", "Resize the whole interface", 50, 150, 89, function(v)
+    sApi:Slider("UI Scale", "Resize the whole interface", 50, 150, 88, function(v)
         userScale = v / 100
         applyScale()
     end, "_uiscale", { Suffix = " %" })
     sApi:Bind("Toggle UI Key", ToggleKey, function()
         toggleUI()
     end, "_togglekey", { NoList = true })
-    sApi:Toggle("Streamer Mode", "Hide watermark when UI is closed", false, function(on)
-        streamerMode = on
-        if wmVisible then
-            if streamerMode then
-                wmFrame.Visible = isOpen
-            else
-                wmFrame.Visible = true
-            end
-        end
-    end, "_streamermode")
 
     sApi:Section("Appearance")
     sApi:Dropdown("UI Theme", { "GX", "Discord", "Light" }, function(v)
         _Catalyst._customAccent = false
-        _Catalyst._customAccentColor = nil
         _Catalyst.Flags["_customaccent"] = false
         applyTheme(v)
         if accentPicker and accentPicker.SetSilent then
@@ -3091,7 +3060,6 @@ function _Catalyst:Window(opt)
 
     accentPicker = sApi:Colorpicker("Accent Color", startAccent, function(c)
         _Catalyst._customAccent = true
-        _Catalyst._customAccentColor = c
         _Catalyst.Flags["_customaccent"] = true
         setAccent(c)
     end, "_accent")
@@ -3109,7 +3077,6 @@ function _Catalyst:Window(opt)
         local origSet = _Catalyst.Config["_accent"].Set
         _Catalyst.Config["_accent"].Set = function(c)
             _Catalyst._customAccent = true
-            _Catalyst._customAccentColor = c
             _Catalyst.Flags["_customaccent"] = true
             origSet(c)
         end
@@ -3117,10 +3084,9 @@ function _Catalyst:Window(opt)
     end
 
     if _Catalyst._customAccent then
-        local cc = _Catalyst._customAccentColor or Theme.Accent
-        setAccent(cc)
+        setAccent(Theme.Accent)
         if accentPicker and accentPicker.SetSilent then
-            accentPicker.SetSilent(cc)
+            accentPicker.SetSilent(Theme.Accent)
         end
     end
 
@@ -3138,6 +3104,16 @@ function _Catalyst:Window(opt)
     sApi:Toggle("Show Watermark", "Display the watermark overlay", true, function(on)
         setWatermarkVisible(on)
     end, "_wmshow")
+    sApi:Toggle("Streamer Mode", "Hide watermark when UI is closed", false, function(on)
+        streamerMode = on
+        if wmVisible then
+            if streamerMode then
+                wmFrame.Visible = isOpen
+            else
+                wmFrame.Visible = true
+            end
+        end
+    end, "_streamermode")
     sApi:Textbox("Display Name", "Custom name shown on the watermark", false, function(t)
         setWatermarkName(t)
     end, "_wmname")
@@ -3277,23 +3253,24 @@ function _Catalyst:Window(opt)
         cfgDrop.Refresh(getConfigList())
         local meta = readMeta()
         local loaded = false
+        local loadedCustomAccent = false
         if meta.autoload ~= false and meta.recent then
             local ok = Window:LoadConfig(meta.recent)
             if ok then
                 loaded = true
+                loadedCustomAccent = _Catalyst._customAccent and true or false
                 currentName = meta.recent
                 nameBox.Set(meta.recent)
                 Window:Notify("Config", "Auto-loaded '" .. meta.recent .. "'")
             end
         end
-        if _Catalyst.__optAccent then
+        if _Catalyst.__optAccent and (not loaded or not loadedCustomAccent) then
             _Catalyst._customAccent = true
-            _Catalyst._customAccentColor = _Catalyst.__optAccent
             _Catalyst.Flags["_customaccent"] = true
-            if _Catalyst.__accentSilent then
-                _Catalyst.__accentSilent(_Catalyst.__optAccent)
-            end
             setAccent(_Catalyst.__optAccent)
+            if accentPicker and accentPicker.SetSilent then
+                accentPicker.SetSilent(_Catalyst.__optAccent)
+            end
         end
         applyAllVisuals()
     end
