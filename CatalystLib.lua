@@ -1,5 +1,5 @@
 local _Catalyst = {}
-_Catalyst.Version = "2.9"
+_Catalyst.Version = "2.8"
 _Catalyst.RainbowColorValue = 0
 _Catalyst.HueSelectionPosition = 0
 _Catalyst.Flags = {}
@@ -388,14 +388,18 @@ local function makeAPI(scroll)
         searchItems[#searchItems + 1] = {
             frame = frame,
             name = string.lower(tostring(name or "")),
+            displayName = tostring(name or ""),
             section = currentSection,
             kind = kind or "card",
         }
     end
     local function registerSection(frame, sec, name)
+        sec.frame = frame
+        sec.displayName = tostring(name or "")
         searchItems[#searchItems + 1] = {
             frame = frame,
             name = string.lower(tostring(name or "")),
+            displayName = tostring(name or ""),
             sec = sec,
             kind = "section",
         }
@@ -520,6 +524,23 @@ local function makeAPI(scroll)
             end
         end
         return n
+    end
+
+    function api.__items()
+        return searchItems
+    end
+
+    function api.__scroll()
+        return scroll
+    end
+
+    function api.__restoreAll()
+        for _, it in ipairs(searchItems) do
+            if it.frame and it.frame.Parent ~= scroll then
+                it.frame.Parent = scroll
+            end
+        end
+        api.__search("")
     end
 
     function api:Section(text)
@@ -1835,6 +1856,7 @@ function _Catalyst:Window(opt)
     local searchBox
     local accentPickerRef
     local allTabApis = {}
+    local tabs = {}
 
     do
         contentPanel.title.Size = UDim2.new(1, -210, 0, 18)
@@ -1885,7 +1907,7 @@ function _Catalyst:Window(opt)
         searchBox.Position = UDim2.new(0, 24, 0, 0)
         searchBox.Size = UDim2.new(1, -32, 1, 0)
         searchBox.Font = Enum.Font.Gotham
-        searchBox.PlaceholderText = "Search this tab..."
+        searchBox.PlaceholderText = "Search all tabs..."
         searchBox.Text = ""
         searchBox.TextColor3 = Theme.Text
         searchBox.PlaceholderColor3 = Theme.SubText
@@ -1895,42 +1917,193 @@ function _Catalyst:Window(opt)
         searchBox.TextTruncate = Enum.TextTruncate.AtEnd
         searchBox.Parent = searchFrame
 
+        local aggScroll = Instance.new("ScrollingFrame")
+        aggScroll.Name = "_AggregateSearch"
+        aggScroll.Size = UDim2.new(1, 0, 1, 0)
+        aggScroll.BackgroundTransparency = 1
+        aggScroll.BorderSizePixel = 0
+        aggScroll.ScrollBarThickness = 4
+        aggScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+        aggScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        aggScroll.Visible = false
+        aggScroll.ZIndex = 5
+        aggScroll.Parent = contentPanel.body
+        regAccent(aggScroll, "ScrollBarImageColor3")
+        local aggLayout = Instance.new("UIListLayout")
+        aggLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        aggLayout.Padding = UDim.new(0, 8)
+        aggLayout.Parent = aggScroll
+        local aggPad = Instance.new("UIPadding")
+        aggPad.PaddingTop = UDim.new(0, 6)
+        aggPad.PaddingLeft = UDim.new(0, 6)
+        aggPad.PaddingRight = UDim.new(0, 8)
+        aggPad.PaddingBottom = UDim.new(0, 10)
+        aggPad.Parent = aggScroll
+
+        local aggEmpty = Instance.new("TextLabel")
+        aggEmpty.BackgroundTransparency = 1
+        aggEmpty.Size = UDim2.new(1, 0, 0, 40)
+        aggEmpty.Font = Enum.Font.GothamMedium
+        aggEmpty.Text = "No results"
+        aggEmpty.TextColor3 = Theme.SubText
+        aggEmpty.TextSize = 13
+        aggEmpty.Visible = false
+        aggEmpty.Parent = aggScroll
+
+        local borrowed = {}
+        local tabHeaders = {}
+        local secHeaders = {}
+        local aggOrder = 0
+        local function aggNext() aggOrder = aggOrder + 1 return aggOrder end
+
+        local function makeTabHeader(text)
+            local f = tabHeaders[#tabHeaders + 1]
+            if not f then
+                f = Instance.new("TextLabel")
+                f.BackgroundTransparency = 1
+                f.Size = UDim2.new(1, 0, 0, 22)
+                f.Font = Enum.Font.GothamBold
+                f.TextSize = 14
+                f.TextXAlignment = Enum.TextXAlignment.Left
+                f.TextTruncate = Enum.TextTruncate.AtEnd
+                f.Parent = aggScroll
+                tabHeaders[#tabHeaders] = f
+            end
+            f.Text = string.upper(text)
+            f.TextColor3 = Theme.Text
+            f.LayoutOrder = aggNext()
+            f.Visible = true
+            return f
+        end
+
+        local headerPool = 0
+        local function makeSecHeader(text)
+            headerPool = headerPool + 1
+            local f = secHeaders[headerPool]
+            if not f then
+                f = Instance.new("Frame")
+                f.Size = UDim2.new(1, 0, 0, 24)
+                f.BackgroundTransparency = 1
+                f.Parent = aggScroll
+                local bar = Instance.new("Frame")
+                bar.Name = "Bar"
+                bar.Size = UDim2.new(0, 3, 0, 12)
+                bar.Position = UDim2.new(0, 10, 0.5, -6)
+                bar.BorderSizePixel = 0
+                bar.BackgroundColor3 = Theme.Accent
+                bar.Parent = f
+                corner(bar, 2)
+                regAccent(bar, "BackgroundColor3")
+                local lbl = Instance.new("TextLabel")
+                lbl.Name = "Lbl"
+                lbl.BackgroundTransparency = 1
+                lbl.Position = UDim2.new(0, 22, 0, 0)
+                lbl.Size = UDim2.new(1, -30, 1, 0)
+                lbl.Font = Enum.Font.GothamBold
+                lbl.TextSize = 12
+                lbl.TextXAlignment = Enum.TextXAlignment.Left
+                lbl.TextTruncate = Enum.TextTruncate.AtEnd
+                lbl.Parent = f
+                secHeaders[headerPool] = f
+            end
+            f.Visible = true
+            f.LayoutOrder = aggNext()
+            f.Lbl.Text = string.upper(text)
+            f.Lbl.TextColor3 = Theme.SubText
+            return f
+        end
+
+        local function restoreBorrowed()
+            for _, b in ipairs(borrowed) do
+                if b.frame and b.frame.Parent == aggScroll then
+                    b.frame.Visible = b.vis
+                    b.frame.LayoutOrder = b.order
+                    b.frame.Parent = b.parent
+                end
+            end
+            borrowed = {}
+        end
+
+        local function hideAggHeaders()
+            for _, f in ipairs(tabHeaders) do f.Visible = false end
+            for _, f in ipairs(secHeaders) do f.Visible = false end
+        end
+
+        local function showNormalTabs()
+            aggScroll.Visible = false
+            restoreBorrowed()
+            hideAggHeaders()
+            for _, t in ipairs(allTabApis) do
+                if t.capi and t.capi.__restoreAll then t.capi.__restoreAll() end
+            end
+            for _, t in ipairs(tabs) do
+                t.container.Visible = (t.capi == currentTabApi)
+            end
+        end
+
+        local function runAggregate(q)
+            restoreBorrowed()
+            hideAggHeaders()
+            headerPool = 0
+            aggOrder = 0
+            for _, t in ipairs(tabs) do t.container.Visible = false end
+            aggScroll.Visible = true
+
+            local lq = string.lower(q)
+            local any = false
+
+            for _, t in ipairs(allTabApis) do
+                local items = t.capi.__items and t.capi.__items() or {}
+                local tabHasMatch = false
+                for _, it in ipairs(items) do
+                    if it.kind == "card" and string.find(it.name, lq, 1, true) then
+                        tabHasMatch = true
+                        break
+                    end
+                end
+                if tabHasMatch then
+                    any = true
+                    makeTabHeader(t.name)
+                    local shownSecs = {}
+                    for _, it in ipairs(items) do
+                        if it.kind == "card" and string.find(it.name, lq, 1, true) then
+                            local secObj = it.section
+                            if secObj and not shownSecs[secObj] then
+                                shownSecs[secObj] = true
+                                makeSecHeader(secObj.displayName or "")
+                            end
+                            borrowed[#borrowed + 1] = {
+                                frame = it.frame,
+                                parent = it.frame.Parent,
+                                order = it.frame.LayoutOrder,
+                                vis = it.frame.Visible,
+                            }
+                            it.frame.Visible = true
+                            it.frame.LayoutOrder = aggNext()
+                            it.frame.Parent = aggScroll
+                        end
+                    end
+                end
+            end
+
+            aggEmpty.Visible = not any
+            if not any then
+                aggEmpty.LayoutOrder = aggNext()
+            end
+        end
+
         searchBox.Focused:Connect(function()
             tween(searchStroke, 0.15, { Color = Theme.Accent })
         end)
         searchBox.FocusLost:Connect(function()
             tween(searchStroke, 0.15, { Color = Theme.Stroke })
         end)
-        local searchSwitching = false
         searchBox:GetPropertyChangedSignal("Text"):Connect(function()
-            if searchSwitching then return end
             local q = searchBox.Text
             if q == "" then
-                for _, t in ipairs(allTabApis) do
-                    if t.capi and t.capi.__search then t.capi.__search("") end
-                end
-                return
-            end
-            local activeMatches = 0
-            if currentTabApi and currentTabApi.__search then
-                activeMatches = currentTabApi.__search(q) or 0
-            end
-            if activeMatches == 0 then
-                for _, t in ipairs(allTabApis) do
-                    if t.capi ~= currentTabApi
-                    and t.capi and t.capi.__countMatches
-                    and t.capi.__countMatches(q) > 0 then
-                        searchSwitching = true
-                        t.activate()
-                        searchBox.Text = q
-                        searchSwitching = false
-                        if currentTabApi and currentTabApi.__search then
-                            currentTabApi.__search(q)
-                        end
-                        searchBox:CaptureFocus()
-                        break
-                    end
-                end
+                showNormalTabs()
+            else
+                runAggregate(q)
             end
         end)
 
@@ -1941,6 +2114,9 @@ function _Catalyst:Window(opt)
             searchRing.Color = Theme.SubText
             searchHandle.BackgroundColor3 = Theme.SubText
             searchStroke.Color = Theme.Stroke
+            aggEmpty.TextColor3 = Theme.SubText
+            for _, f in ipairs(tabHeaders) do f.TextColor3 = Theme.Text end
+            for _, f in ipairs(secHeaders) do f.Lbl.TextColor3 = Theme.SubText end
         end)
     end
 
@@ -1971,8 +2147,6 @@ function _Catalyst:Window(opt)
     tabLayout.Padding = UDim.new(0, 5)
     tabLayout.Parent = tabScroll
     pad(tabScroll, 6)
-
-    local tabs = {}
 
     local function refreshTabList()
         local horiz = (panels.Tabs.edge == "Top" or panels.Tabs.edge == "Bottom")
@@ -2813,7 +2987,7 @@ function _Catalyst:Window(opt)
     end
 
     local notifEnabled = true
-    local notifScale = 1
+    local notifScale = 0.85
     local notifPosition = "Bottom Right"
     local NOTIF_BASE_W = 290
 
@@ -3310,7 +3484,7 @@ function _Catalyst:Window(opt)
     sApi:Dropdown("Notification Position", { "Bottom Right", "Top Right", "Top Left" }, function(v)
         applyNotifPosition(v)
     end, "_notifpos", "Bottom Right")
-    sApi:Slider("Notification Size", "Resize notifications", 60, 150, 100, function(v)
+    sApi:Slider("Notification Size", "Resize notifications", 75, 100, 85, function(v)
         applyNotifScale(v / 100)
     end, "_notifscale", { Suffix = " %" })
 
