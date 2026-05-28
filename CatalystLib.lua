@@ -2955,46 +2955,100 @@ function _Catalyst:Window(opt)
         return true
     end
 
-    function Window:LoadConfig(name)
-        if not name or name == "" then return false end
-        local path = ConfigFolder .. "/" .. name .. ".json"
-        if not FileSystem.exists(path) then return false end
-        local raw = FileSystem.read(path)
-        if not raw then return false end
-        local ok, data = pcall(function() return HttpService:JSONDecode(raw) end)
-        if not ok or type(data) ~= "table" then return false end
-        if data["_theme"] ~= nil and _Catalyst.Config["_theme"] then
-            _Catalyst._customAccent = false
-            pcall(_Catalyst.Config["_theme"].Set, deserialize(data["_theme"]))
-        end
-        for flag, val in pairs(data) do
-            if flag ~= "_theme" and flag ~= "_accent" and flag ~= "_customaccent" then
-                local c = _Catalyst.Config[flag]
-                if c then pcall(c.Set, deserialize(val)) end
-            end
-        end
-        local wantsCustom = data["_customaccent"] == true
-        if wantsCustom and data["_accent"] ~= nil and _Catalyst.Config["_accent"] then
-            _Catalyst._customAccent = true
-            _Catalyst.Flags["_customaccent"] = true
-            pcall(_Catalyst.Config["_accent"].Set, deserialize(data["_accent"]))
-        else
-            _Catalyst._customAccent = false
-            _Catalyst.Flags["_customaccent"] = false
-            local tn = _Catalyst.Flags["_theme"]
-            local tt = Themes[tn] or Theme
-            local themeAccent = tt.Accent or Theme.Accent
-            if _Catalyst.__accentSilent then
-                _Catalyst.__accentSilent(themeAccent)
-            end
-            _Catalyst._customAccent = false
-            setAccent(themeAccent)
-        end
-        writeMeta({ recent = name })
-        applyAllVisuals()
-        return true
+function Window:LoadConfig(name)
+    if not name or name == "" then
+        return false
     end
 
+    local path = ConfigFolder .. "/" .. name .. ".json"
+
+    if not FileSystem.exists(path) then
+        return false
+    end
+
+    local raw = FileSystem.read(path)
+
+    if not raw then
+        return false
+    end
+
+    local ok, data = pcall(function()
+        return HttpService:JSONDecode(raw)
+    end)
+
+    if not ok or type(data) ~= "table" then
+        return false
+    end
+
+    local loadedTheme = nil
+
+    -- load theme first
+    if data["_theme"] ~= nil and _Catalyst.Config["_theme"] then
+        loadedTheme = deserialize(data["_theme"])
+
+        _Catalyst._customAccent = false
+
+        pcall(function()
+            _Catalyst.Config["_theme"].Set(loadedTheme)
+        end)
+    end
+
+    -- load all other flags
+    for flag, val in pairs(data) do
+        if flag ~= "_theme"
+        and flag ~= "_accent"
+        and flag ~= "_customaccent" then
+
+            local c = _Catalyst.Config[flag]
+
+            if c then
+                pcall(function()
+                    c.Set(deserialize(val))
+                end)
+            end
+        end
+    end
+
+    local wantsCustom = data["_customaccent"] == true
+
+    -- custom accent
+    if wantsCustom
+    and data["_accent"] ~= nil
+    and _Catalyst.Config["_accent"] then
+
+        _Catalyst._customAccent = true
+        _Catalyst.Flags["_customaccent"] = true
+
+        pcall(function()
+            _Catalyst.Config["_accent"].Set(
+                deserialize(data["_accent"])
+            )
+        end)
+
+    else
+        -- use theme accent
+        _Catalyst._customAccent = false
+        _Catalyst.Flags["_customaccent"] = false
+
+        local tt = Themes[loadedTheme] or Theme
+        local themeAccent = tt.Accent or Theme.Accent
+
+        -- apply silently if supported
+        if _Catalyst.__accentSilent then
+            _Catalyst.__accentSilent(themeAccent)
+        else
+            setAccent(themeAccent)
+        end
+    end
+
+    writeMeta({
+        recent = name
+    })
+
+    applyAllVisuals()
+
+    return true
+end
     function Window:DeleteConfig(name)
         if not name or name == "" then return false end
         FileSystem.delete(ConfigFolder .. "/" .. name .. ".json")
