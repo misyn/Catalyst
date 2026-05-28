@@ -1,5 +1,5 @@
 local _Catalyst = {}
-_Catalyst.Version = "2.8"
+_Catalyst.Version = "2.9"
 _Catalyst.RainbowColorValue = 0
 _Catalyst.HueSelectionPosition = 0
 _Catalyst.Flags = {}
@@ -98,7 +98,7 @@ end
 local function setAccent(c)
     Theme.Accent = c
     for _, e in ipairs(AccentObjects) do
-        if e.obj and e.obj.Parent then
+        if e.obj then
             pcall(function() e.obj[e.prop] = c end)
         end
     end
@@ -474,6 +474,7 @@ local function makeAPI(scroll)
     function api.__search(query)
         query = string.lower(tostring(query or ""))
         local searching = query ~= ""
+        local matchCount = 0
         for _, it in ipairs(searchItems) do
             if it.kind == "section" then it.sec.__match = false end
         end
@@ -482,7 +483,10 @@ local function makeAPI(scroll)
                 if searching then
                     local hit = string.find(it.name, query, 1, true) ~= nil
                     it.frame.Visible = hit
-                    if hit and it.section then it.section.__match = true end
+                    if hit then
+                        matchCount = matchCount + 1
+                        if it.section then it.section.__match = true end
+                    end
                 else
                     it.frame.Visible = (not it.section) or (not it.section.collapsed)
                 end
@@ -503,6 +507,19 @@ local function makeAPI(scroll)
                 end
             end
         end
+        return matchCount
+    end
+
+    function api.__countMatches(query)
+        query = string.lower(tostring(query or ""))
+        if query == "" then return 0 end
+        local n = 0
+        for _, it in ipairs(searchItems) do
+            if it.kind == "card" and string.find(it.name, query, 1, true) then
+                n = n + 1
+            end
+        end
+        return n
     end
 
     function api:Section(text)
@@ -1816,6 +1833,8 @@ function _Catalyst:Window(opt)
 
     local currentTabApi
     local searchBox
+    local accentPickerRef
+    local allTabApis = {}
 
     do
         contentPanel.title.Size = UDim2.new(1, -210, 0, 18)
@@ -1882,9 +1901,36 @@ function _Catalyst:Window(opt)
         searchBox.FocusLost:Connect(function()
             tween(searchStroke, 0.15, { Color = Theme.Stroke })
         end)
+        local searchSwitching = false
         searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+            if searchSwitching then return end
+            local q = searchBox.Text
+            if q == "" then
+                for _, t in ipairs(allTabApis) do
+                    if t.capi and t.capi.__search then t.capi.__search("") end
+                end
+                return
+            end
+            local activeMatches = 0
             if currentTabApi and currentTabApi.__search then
-                currentTabApi.__search(searchBox.Text)
+                activeMatches = currentTabApi.__search(q) or 0
+            end
+            if activeMatches == 0 then
+                for _, t in ipairs(allTabApis) do
+                    if t.capi ~= currentTabApi
+                    and t.capi and t.capi.__countMatches
+                    and t.capi.__countMatches(q) > 0 then
+                        searchSwitching = true
+                        t.activate()
+                        searchBox.Text = q
+                        searchSwitching = false
+                        if currentTabApi and currentTabApi.__search then
+                            currentTabApi.__search(q)
+                        end
+                        searchBox:CaptureFocus()
+                        break
+                    end
+                end
             end
         end)
 
@@ -2038,8 +2084,7 @@ function _Catalyst:Window(opt)
 
     local function makeZoneFrame()
         local z = Instance.new("Frame")
-        z.BackgroundColor3 = Theme.Header
-        z.BackgroundTransparency = 0.15
+        z.BackgroundTransparency = 1
         z.BorderSizePixel = 0
         z.Visible = false
         z.ZIndex = 30
@@ -2047,17 +2092,7 @@ function _Catalyst:Window(opt)
         corner(z, 8)
         local s = stroke(z, Theme.Accent, 2, 0)
         regAccent(s, "Color")
-        local lbl = Instance.new("TextLabel")
-        lbl.BackgroundTransparency = 1
-        lbl.Size = UDim2.new(1, 0, 1, 0)
-        lbl.Font = Enum.Font.GothamBold
-        lbl.Text = "DOCK HERE"
-        lbl.TextColor3 = Theme.Accent
-        lbl.TextSize = 12
-        lbl.ZIndex = 31
-        lbl.Parent = z
-        regAccent(lbl, "TextColor3")
-        return { frame = z, label = lbl }
+        return { frame = z }
     end
 
     local function ensureZoneFrames(needed)
@@ -2771,15 +2806,21 @@ function _Catalyst:Window(opt)
         end)
 
         table.insert(tabs, entry)
+        allTabApis[#allTabApis + 1] = { capi = capi, activate = activate, name = name }
         refreshTabList()
         if firstTab then firstTab = false activate() end
         return capi
     end
 
+    local notifEnabled = true
+    local notifScale = 1
+    local notifPosition = "Bottom Right"
+    local NOTIF_BASE_W = 290
+
     local notifyHolder = Instance.new("Frame")
     notifyHolder.AnchorPoint = Vector2.new(1, 1)
     notifyHolder.Position = UDim2.new(1, -16, 1, -16)
-    notifyHolder.Size = UDim2.new(0, 290, 1, -32)
+    notifyHolder.Size = UDim2.new(0, NOTIF_BASE_W, 1, -32)
     notifyHolder.BackgroundTransparency = 1
     notifyHolder.Parent = ScreenGui
     local nLayout = Instance.new("UIListLayout")
@@ -2789,11 +2830,46 @@ function _Catalyst:Window(opt)
     nLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
     nLayout.Parent = notifyHolder
 
+    local notifUIScale = Instance.new("UIScale")
+    notifUIScale.Scale = notifScale
+    notifUIScale.Parent = notifyHolder
+
+    local function applyNotifPosition(pos)
+        notifPosition = pos or notifPosition
+        if notifPosition == "Top Right" then
+            notifyHolder.AnchorPoint = Vector2.new(1, 0)
+            notifyHolder.Position = UDim2.new(1, -16, 0, 16)
+            nLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+            nLayout.VerticalAlignment = Enum.VerticalAlignment.Top
+        elseif notifPosition == "Top Left" then
+            notifyHolder.AnchorPoint = Vector2.new(0, 0)
+            notifyHolder.Position = UDim2.new(0, 16, 0, 16)
+            nLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+            nLayout.VerticalAlignment = Enum.VerticalAlignment.Top
+        else
+            notifyHolder.AnchorPoint = Vector2.new(1, 1)
+            notifyHolder.Position = UDim2.new(1, -16, 1, -16)
+            nLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+            nLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
+        end
+    end
+
+    local function applyNotifScale(s)
+        notifScale = s
+        notifUIScale.Scale = s
+    end
+
+    local function isLeftAligned()
+        return notifPosition == "Top Left"
+    end
+
     function Window:Notify(title, desc, duration, color)
+        if not notifEnabled then return end
         duration = tonumber(duration) or 4
         color = color or Theme.Accent
         local hasDesc = desc ~= nil and desc ~= ""
         local H = hasDesc and 84 or 50
+        local openW = NOTIF_BASE_W
 
         local card = Instance.new("Frame")
         card.Size = UDim2.new(0, 0, 0, H)
@@ -2867,7 +2943,7 @@ function _Catalyst:Window(opt)
         bar.Parent = barBG
         corner(bar, 2)
 
-        tween(card, 0.3, { Size = UDim2.new(0, 290, 0, H), BackgroundTransparency = 0 }, Enum.EasingStyle.Quart)
+        tween(card, 0.3, { Size = UDim2.new(0, openW, 0, H), BackgroundTransparency = 0 }, Enum.EasingStyle.Quart)
         tween(st, 0.3, { Transparency = 0.4 })
         tween(titleLbl, 0.3, { TextTransparency = 0 })
         tween(durLbl, 0.3, { TextTransparency = 0 })
@@ -2927,18 +3003,28 @@ function _Catalyst:Window(opt)
         return out
     end
 
-    local function applyAllVisuals()
-        if _Catalyst._customAccent then
-            setAccent(Theme.Accent)
-        else
-            local tn = _Catalyst.Flags["_theme"]
-            local tt = Themes[tn] or Theme
-            setAccent(tt.Accent or Theme.Accent)
+    local function resolveAccent()
+        if _Catalyst._customAccent and _Catalyst.__resolvedAccent then
+            return _Catalyst.__resolvedAccent
         end
+        if _Catalyst._customAccent then
+            return Theme.Accent
+        end
+        local tn = _Catalyst.Flags["_theme"]
+        local tt = Themes[tn] or Theme
+        return tt.Accent or Theme.Accent
+    end
+
+    local function applyAllVisuals()
+        local finalAccent = resolveAccent()
         for _, fn in ipairs(ThemeListeners) do
             pcall(fn, Theme)
         end
         relayout(true)
+        setAccent(finalAccent)
+        if accentPickerRef and accentPickerRef.SetSilent then
+            pcall(accentPickerRef.SetSilent, finalAccent)
+        end
     end
 
     function Window:SaveConfig(name)
@@ -3017,6 +3103,7 @@ function _Catalyst:Window(opt)
             _Catalyst.Flags["_customaccent"] = true
 
             local savedAccent = deserialize(data["_accent"])
+            _Catalyst.__resolvedAccent = savedAccent
 
             pcall(function()
                 _Catalyst.Config["_accent"].Set(savedAccent)
@@ -3028,6 +3115,7 @@ function _Catalyst:Window(opt)
         else
             _Catalyst._customAccent = false
             _Catalyst.Flags["_customaccent"] = false
+            _Catalyst.__resolvedAccent = nil
 
             local themeName = (type(loadedTheme) == "string" and loadedTheme)
                 or _Catalyst.Flags["_theme"]
@@ -3108,6 +3196,7 @@ function _Catalyst:Window(opt)
     sApi:Dropdown("UI Theme", { "GX", "Discord", "Light" }, function(v)
         _Catalyst._customAccent = false
         _Catalyst.Flags["_customaccent"] = false
+        _Catalyst.__resolvedAccent = nil
         applyTheme(v)
         if accentPicker and accentPicker.SetSilent then
             accentPicker.SetSilent(Theme.Accent)
@@ -3117,9 +3206,11 @@ function _Catalyst:Window(opt)
     accentPicker = sApi:Colorpicker("Accent Color", startAccent, function(c)
         _Catalyst._customAccent = true
         _Catalyst.Flags["_customaccent"] = true
+        _Catalyst.__resolvedAccent = c
         setAccent(c)
     end, "_accent")
 
+    accentPickerRef = accentPicker
     _Catalyst.__accentSilent = accentPicker.SetSilent
 
     _Catalyst.Config["_customaccent"] = {
@@ -3134,12 +3225,14 @@ function _Catalyst:Window(opt)
         _Catalyst.Config["_accent"].Set = function(c)
             _Catalyst._customAccent = true
             _Catalyst.Flags["_customaccent"] = true
+            _Catalyst.__resolvedAccent = c
             origSet(c)
         end
         _Catalyst.Config["_accent"].Default = opt.Accent or _Catalyst.Config["_accent"].Default
     end
 
     if _Catalyst._customAccent then
+        _Catalyst.__resolvedAccent = Theme.Accent
         setAccent(Theme.Accent)
         if accentPicker and accentPicker.SetSilent then
             accentPicker.SetSilent(Theme.Accent)
@@ -3209,6 +3302,17 @@ function _Catalyst:Window(opt)
         }
         _Catalyst.Flags["_wmpos"] = _Catalyst.Config["_wmpos"].Default
     end
+
+    sApi:Section("Notifications")
+    sApi:Toggle("Enable Notifications", "Show popup notifications", true, function(on)
+        notifEnabled = on and true or false
+    end, "_notifenabled")
+    sApi:Dropdown("Notification Position", { "Bottom Right", "Top Right", "Top Left" }, function(v)
+        applyNotifPosition(v)
+    end, "_notifpos", "Bottom Right")
+    sApi:Slider("Notification Size", "Resize notifications", 60, 150, 100, function(v)
+        applyNotifScale(v / 100)
+    end, "_notifscale", { Suffix = " %" })
 
     sApi:Section("Configuration")
     local nameBox = sApi:Textbox("Config Name", "", false, function(t) currentName = t end)
@@ -3323,12 +3427,22 @@ function _Catalyst:Window(opt)
         if _Catalyst.__optAccent and (not loaded or not loadedCustomAccent) then
             _Catalyst._customAccent = true
             _Catalyst.Flags["_customaccent"] = true
+            _Catalyst.__resolvedAccent = _Catalyst.__optAccent
             setAccent(_Catalyst.__optAccent)
             if accentPicker and accentPicker.SetSilent then
                 accentPicker.SetSilent(_Catalyst.__optAccent)
             end
         end
         applyAllVisuals()
+        taskLib.spawn(function()
+            taskLib.wait()
+            if not alive() then return end
+            local finalAccent = resolveAccent()
+            setAccent(finalAccent)
+            if accentPicker and accentPicker.SetSilent then
+                pcall(accentPicker.SetSilent, finalAccent)
+            end
+        end)
     end
     taskLib.spawn(function()
         taskLib.wait(0.4)
