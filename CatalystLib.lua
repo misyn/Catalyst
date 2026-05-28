@@ -1,5 +1,5 @@
 local _Catalyst = {}
-_Catalyst.Version = "2.7"
+_Catalyst.Version = "2.8"
 _Catalyst.RainbowColorValue = 0
 _Catalyst.HueSelectionPosition = 0
 _Catalyst.Flags = {}
@@ -950,6 +950,7 @@ local function makeAPI(scroll)
         holder.ScrollBarThickness = 3
         holder.AutomaticCanvasSize = Enum.AutomaticSize.Y
         holder.CanvasSize = UDim2.new(0, 0, 0, 0)
+        holder.Visible = false
         holder.Parent = card
         regAccent(holder, "ScrollBarImageColor3")
         local hLayout = Instance.new("UIListLayout")
@@ -971,6 +972,7 @@ local function makeAPI(scroll)
         end
         local function toggle()
             open = not open
+            holder.Visible = open
             tween(arrow, 0.2, { Rotation = open and 180 or 0 })
             sizeCard()
         end
@@ -1081,6 +1083,7 @@ local function makeAPI(scroll)
         holder.ScrollBarThickness = 3
         holder.AutomaticCanvasSize = Enum.AutomaticSize.Y
         holder.CanvasSize = UDim2.new(0, 0, 0, 0)
+        holder.Visible = false
         holder.Parent = card
         regAccent(holder, "ScrollBarImageColor3")
         local hLayout = Instance.new("UIListLayout")
@@ -1122,6 +1125,7 @@ local function makeAPI(scroll)
         end
         local function toggleOpen()
             open = not open
+            holder.Visible = open
             tween(arrow, 0.2, { Rotation = open and 180 or 0 })
             sizeCard()
         end
@@ -1281,6 +1285,7 @@ local function makeAPI(scroll)
         box.BackgroundColor3 = Color3.fromHSV(h, 1, 1)
         box.BorderSizePixel = 0
         box.Image = "rbxassetid://4155801252"
+        box.Visible = false
         box.Parent = card
         corner(box, 4)
 
@@ -1297,6 +1302,7 @@ local function makeAPI(scroll)
         hueBar.Position = UDim2.new(0, 12, 0, 150)
         hueBar.Size = UDim2.new(1, -24, 0, 14)
         hueBar.BorderSizePixel = 0
+        hueBar.Visible = false
         hueBar.Parent = card
         corner(hueBar, 4)
         local hg = Instance.new("UIGradient")
@@ -1330,6 +1336,7 @@ local function makeAPI(scroll)
         rbRow.TextSize = 13
         rbRow.TextXAlignment = Enum.TextXAlignment.Left
         rbRow.AutoButtonColor = false
+        rbRow.Visible = false
         rbRow.Parent = card
 
         local rbPill = Instance.new("Frame")
@@ -1405,6 +1412,9 @@ local function makeAPI(scroll)
 
         hitOverlay(card, 38).MouseButton1Click:Connect(function()
             open = not open
+            box.Visible = open
+            hueBar.Visible = open
+            rbRow.Visible = open
             sizeCard()
         end)
 
@@ -1652,6 +1662,8 @@ function _Catalyst:Window(opt)
     local SubTitle     = opt.SubTitle or opt.Sub or "GX Edition"
     local ConfigFolder = opt.ConfigFolder or "_CatalystConfigs"
     local ToggleKey    = opt.ToggleKey or opt.CloseBind or Enum.KeyCode.RightAlt
+
+    _Catalyst.__optAccent = opt.Accent
     if opt.Accent then
         _Catalyst._customAccent = true
         _Catalyst.Flags["_customaccent"] = true
@@ -1685,7 +1697,7 @@ function _Catalyst:Window(opt)
     uiScale.Scale = 0
     uiScale.Parent = MainFrame
 
-    local fitScale, userScale, isOpen = 1, 1, true
+    local fitScale, userScale, isOpen = 1, 0.88, true
     local function targetScale() return fitScale * userScale end
     local function computeFit()
         local cam = workspace.CurrentCamera
@@ -1706,6 +1718,10 @@ function _Catalyst:Window(opt)
 
     local streamerMode = false
     local wmVisible = true
+    local kbFrame
+    local kbListEnabled = true
+    local kbRows = {}
+    local kbRefresh
 
     local toggleBusy = false
     local function toggleUI()
@@ -1724,19 +1740,17 @@ function _Catalyst:Window(opt)
                 toggleBusy = false
             end)
         end
-        
-        -- Handle watermark visibility with streamer mode
+
         if wmVisible and streamerMode then
-            local wmFrame = ScreenGui:FindFirstChild("_CatalystWatermark")
-            if wmFrame then
-                wmFrame.Visible = isOpen
+            local wmf = ScreenGui:FindFirstChild("_CatalystWatermark")
+            if wmf then
+                wmf.Visible = isOpen
             end
         end
-        
-        -- Handle keybind list visibility with streamer mode
-        if streamerMode then
+
+        if streamerMode and kbFrame then
             kbFrame.Visible = isOpen and kbListEnabled and (#kbRows > 0)
-        else
+        elseif kbRefresh then
             kbRefresh()
         end
     end
@@ -1947,10 +1961,10 @@ function _Catalyst:Window(opt)
         end
     end
 
-    local function relayout(animated)
+    local function layoutFromPanels(srcPanels, animated)
         local rect = { x = PAD, y = PAD, w = WIN_W - 2 * PAD, h = WIN_H - 2 * PAD }
         local byEdge = { Left = {}, Right = {}, Top = {}, Bottom = {} }
-        for _, p in pairs(panels) do table.insert(byEdge[p.edge], p) end
+        for _, p in pairs(srcPanels) do table.insert(byEdge[p.edge], p) end
         for _, arr in pairs(byEdge) do
             table.sort(arr, function(a, b) return a.order < b.order end)
         end
@@ -1997,6 +2011,10 @@ function _Catalyst:Window(opt)
             rect.h = rect.h - SIDE_H - GAP
         end
         placeFrame(contentPanel.frame, rect.x, rect.y, rect.w, rect.h, animated)
+    end
+
+    local function relayout(animated)
+        layoutFromPanels(panels, animated)
         refreshTabList()
     end
 
@@ -2057,53 +2075,6 @@ function _Catalyst:Window(opt)
         end
     end
 
-    local function showZonesForEdge(edge, draggingKey)
-        local tempPanels = {}
-        for k, p in pairs(panels) do
-            if k ~= draggingKey then tempPanels[k] = p end
-        end
-
-        local byEdge = { Left = {}, Right = {}, Top = {}, Bottom = {} }
-        for _, p in pairs(tempPanels) do table.insert(byEdge[p.edge], p) end
-        for _, arr in pairs(byEdge) do
-            table.sort(arr, function(a, b) return a.order < b.order end)
-        end
-
-        local rect = { x = PAD, y = PAD, w = WIN_W - 2 * PAD, h = WIN_H - 2 * PAD }
-        local leftW   = (#byEdge.Left  > 0) and SIDE_W or 0
-        local rightW  = (#byEdge.Right > 0) and SIDE_W or 0
-        local innerX  = rect.x + (leftW  > 0 and leftW  + GAP or 0)
-        local innerW  = rect.w - (leftW  > 0 and leftW  + GAP or 0) - (rightW > 0 and rightW + GAP or 0)
-
-        local slots = {}
-        local isVertical = (edge == "Left" or edge == "Right")
-        local count = #byEdge[edge]
-
-        if isVertical then
-            local each = (rect.h - GAP * count) / (count + 1)
-            for i = 1, count + 1 do
-                local slotY = rect.y + (i - 1) * (each + GAP)
-                local zx = (edge == "Left") and rect.x or (rect.x + rect.w - SIDE_W)
-                slots[#slots + 1] = { x = zx, y = slotY, w = SIDE_W, h = each }
-            end
-        else
-            local each = (innerW - GAP * count) / (count + 1)
-            for i = 1, count + 1 do
-                local slotX = innerX + (i - 1) * (each + GAP)
-                local zy = (edge == "Top") and rect.y or (rect.y + rect.h - SIDE_H)
-                slots[#slots + 1] = { x = slotX, y = zy, w = each, h = SIDE_H }
-            end
-        end
-
-        ensureZoneFrames(#slots)
-        for i, sl in ipairs(slots) do
-            local zf = zoneFrames[i]
-            zf.frame.Position = UDim2.fromOffset(math.floor(sl.x), math.floor(sl.y))
-            zf.frame.Size = UDim2.fromOffset(math.floor(sl.w), math.floor(sl.h))
-            zf.frame.Visible = true
-        end
-    end
-
     local function nearestEdge(cursor)
         local mp, ms = MainFrame.AbsolutePosition, MainFrame.AbsoluteSize
         local rx = math.clamp((cursor.X - mp.X) / math.max(ms.X, 1), 0, 1)
@@ -2115,6 +2086,23 @@ function _Catalyst:Window(opt)
         end
         local axisVal = (best == "Left" or best == "Right") and ry or rx
         return best, axisVal
+    end
+
+    local function computeDockResult(key, edge, axisVal)
+        local result = {}
+        for k, v in pairs(panels) do
+            result[k] = { panel = v.panel, edge = v.edge, order = v.order }
+        end
+        local other
+        for k, v in pairs(result) do if k ~= key then other = v end end
+        result[key].edge = edge
+        if other and other.edge == edge then
+            if axisVal < 0.5 then result[key].order, other.order = 1, 2
+            else result[key].order, other.order = 2, 1 end
+        else
+            result[key].order = 1
+        end
+        return result
     end
 
     local function cursorOverPanels(pos)
@@ -2184,12 +2172,53 @@ function _Catalyst:Window(opt)
         end)
     end
 
+    local function showDockHint(key, edge, axisVal)
+        local preview = computeDockResult(key, edge, axisVal)
+        local target = preview[key]
+        local rect = { x = PAD, y = PAD, w = WIN_W - 2 * PAD, h = WIN_H - 2 * PAD }
+        local byEdge = { Left = {}, Right = {}, Top = {}, Bottom = {} }
+        for _, p in pairs(preview) do table.insert(byEdge[p.edge], p) end
+        for _, arr in pairs(byEdge) do
+            table.sort(arr, function(a, b) return a.order < b.order end)
+        end
+
+        local hintX, hintY, hintW, hintH
+        if target.edge == "Left" or target.edge == "Right" then
+            local arr = byEdge[target.edge]
+            local each = (rect.h - GAP * (#arr - 1)) / #arr
+            local idx = 1
+            for i, p in ipairs(arr) do if p == target then idx = i end end
+            local cy = rect.y + (idx - 1) * (each + GAP)
+            local cx = (target.edge == "Left") and rect.x or (rect.x + rect.w - SIDE_W)
+            hintX, hintY, hintW, hintH = cx, cy, SIDE_W, each
+        else
+            local leftW   = (#byEdge.Left  > 0) and SIDE_W or 0
+            local rightW  = (#byEdge.Right > 0) and SIDE_W or 0
+            local innerX  = rect.x + (leftW > 0 and leftW + GAP or 0)
+            local innerW  = rect.w - (leftW > 0 and leftW + GAP or 0) - (rightW > 0 and rightW + GAP or 0)
+            local arr = byEdge[target.edge]
+            local each = (innerW - GAP * (#arr - 1)) / #arr
+            local idx = 1
+            for i, p in ipairs(arr) do if p == target then idx = i end end
+            local cx = innerX + (idx - 1) * (each + GAP)
+            local cy = (target.edge == "Top") and rect.y or (rect.y + rect.h - SIDE_H)
+            hintX, hintY, hintW, hintH = cx, cy, each, SIDE_H
+        end
+
+        ensureZoneFrames(1)
+        local zf = zoneFrames[1]
+        zf.frame.Position = UDim2.fromOffset(math.floor(hintX), math.floor(hintY))
+        zf.frame.Size = UDim2.fromOffset(math.floor(hintW), math.floor(hintH))
+        zf.frame.Visible = true
+        for i = 2, #zoneFrames do zoneFrames[i].frame.Visible = false end
+    end
+
     local function makePanelDrag(key)
         local pData = panels[key]
         local handle = pData.panel.header
         local dragging, startInput, startPos = false, nil, nil
         local lastCursor = Vector2.new()
-        local lastEdge = nil
+        local committed = false
 
         handle.InputBegan:Connect(function(i)
             if i.UserInputType == Enum.UserInputType.MouseButton1
@@ -2197,8 +2226,7 @@ function _Catalyst:Window(opt)
                 dragging = true
                 startInput = i.Position
                 startPos = pData.panel.frame.Position
-                pData.panel.frame.ZIndex = 20
-                lastEdge = nil
+                committed = false
             end
         end)
         handle.InputEnded:Connect(function(i)
@@ -2206,18 +2234,7 @@ function _Catalyst:Window(opt)
             if i.UserInputType == Enum.UserInputType.MouseButton1
             or i.UserInputType == Enum.UserInputType.Touch then
                 dragging = false
-                pData.panel.frame.ZIndex = 1
                 hideAllZones()
-                local edge, axisVal = nearestEdge(lastCursor)
-                local other
-                for k, v in pairs(panels) do if k ~= key then other = v end end
-                pData.edge = edge
-                if other and other.edge == edge then
-                    if axisVal < 0.5 then pData.order, other.order = 1, 2
-                    else pData.order, other.order = 2, 1 end
-                else
-                    pData.order = 1
-                end
                 relayout(true)
                 _Catalyst.Flags["_layout"] = getLayout()
             end
@@ -2227,17 +2244,23 @@ function _Catalyst:Window(opt)
             if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement
             or i.UserInputType == Enum.UserInputType.Touch) then
                 lastCursor = Vector2.new(i.Position.X, i.Position.Y)
-                local delta = i.Position - startInput
-                pData.panel.frame.Position = UDim2.new(
-                    0, snap(startPos.X.Offset + delta.X),
-                    0, snap(startPos.Y.Offset + delta.Y)
-                )
-                local edge = nearestEdge(lastCursor)
-                if edge ~= lastEdge then
-                    lastEdge = edge
-                    hideAllZones()
-                    showZonesForEdge(edge, key)
+                local edge, axisVal = nearestEdge(lastCursor)
+                local other
+                for k, v in pairs(panels) do if k ~= key then other = v end end
+                local prevEdge, prevOrder = pData.edge, pData.order
+                local prevOtherOrder = other and other.order or nil
+                pData.edge = edge
+                if other and other.edge == edge then
+                    if axisVal < 0.5 then pData.order, other.order = 1, 2
+                    else pData.order, other.order = 2, 1 end
+                else
+                    pData.order = 1
                 end
+                if pData.edge ~= prevEdge or pData.order ~= prevOrder
+                or (other and other.order ~= prevOtherOrder) then
+                    relayout(true)
+                end
+                showDockHint(key, edge, axisVal)
             end
         end)
     end
@@ -2268,7 +2291,7 @@ function _Catalyst:Window(opt)
     end
 
     local WM_DEFAULT_POS = UDim2.new(0, 14, 1, -68)
-    local WM_DEFAULT_SCALE = 1
+    local WM_DEFAULT_SCALE = 0.88
 
     local wmScale = WM_DEFAULT_SCALE
     local wmBaseW, wmBaseH = 300, 54
@@ -2404,16 +2427,12 @@ function _Catalyst:Window(opt)
             local t = os.date("*t")
             local dateStr = string.format("%02d/%02d/%04d %02d:%02d:%02d",
                 t.month, t.day, t.year, t.hour, t.min, t.sec)
-            wmSub.Text = getClientId():sub(1, 8) .. "  |  " .. dateStr
+            wmSub.Text = getClientId() .. "  |  " .. dateStr
             taskLib.wait(1)
         end
     end)
 
-    -- Keybind List (ported from Nexonix)
-    local kbListEnabled = true
-    local kbRows = {}
-
-    local kbFrame = Instance.new("Frame")
+    kbFrame = Instance.new("Frame")
     kbFrame.Name = "_CatalystKeybinds"
     kbFrame.AnchorPoint = Vector2.new(0, 0.5)
     kbFrame.Position = UDim2.new(0, 14, 0.5, 0)
@@ -2529,7 +2548,7 @@ function _Catalyst:Window(opt)
         end)
     end
 
-        _Catalyst.Config["_kbpos"] = {
+    _Catalyst.Config["_kbpos"] = {
         Get = function()
             return {
                 sx = kbFrame.Position.X.Scale,
@@ -2552,7 +2571,7 @@ function _Catalyst:Window(opt)
     }
     _Catalyst.Flags["_kbpos"] = _Catalyst.Config["_kbpos"].Default
 
-    local function kbRefresh()
+    kbRefresh = function()
         local shouldShow = kbListEnabled and (#kbRows > 0)
         if not shouldShow then
             kbFrame.Visible = false
@@ -2769,7 +2788,6 @@ function _Catalyst:Window(opt)
     nLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
     nLayout.Parent = notifyHolder
 
-    -- Notification (ported from Nexonix: live countdown + draining progress bar)
     function Window:Notify(title, desc, duration, color)
         duration = tonumber(duration) or 4
         color = color or Theme.Accent
@@ -2992,7 +3010,15 @@ function _Catalyst:Window(opt)
                 pcall(c.Set, c.Default)
             end
         end
-        if _Catalyst.Config["_accent"] then
+        if _Catalyst.__optAccent then
+            _Catalyst._customAccent = true
+            _Catalyst.Flags["_customaccent"] = true
+            if _Catalyst.Config["_accent"] then
+                pcall(_Catalyst.Config["_accent"].Set, _Catalyst.__optAccent)
+            else
+                setAccent(_Catalyst.__optAccent)
+            end
+        elseif _Catalyst.Config["_accent"] then
             pcall(_Catalyst.Config["_accent"].Set, _Catalyst.Config["_accent"].Default)
         end
         applyAllVisuals()
@@ -3011,50 +3037,16 @@ function _Catalyst:Window(opt)
     local currentName = ""
     local cfgDrop
     local accentPicker
+    local startAccent = _Catalyst._customAccent and Theme.Accent or (opt.Accent or Theme.Accent)
 
-    sApi:Section("Configuration")
-    local nameBox = sApi:Textbox("Config Name", "", false, function(t) currentName = t end)
-    cfgDrop = sApi:Dropdown("Saved Configs", getConfigList(), function(v)
-        currentName = v
-        nameBox.Set(v)
-    end)
-    sApi:Button("Save Config", "Write current settings to a file", function()
-        if currentName == "" then
-            Window:Notify("Config", "Type a config name first.")
-            return
-        end
-        local ok = Window:SaveConfig(currentName)
-        cfgDrop.Refresh(getConfigList())
-        Window:Notify("Config", ok and ("Saved '" .. currentName .. "'") or "Save failed.")
-    end)
-    sApi:Button("Load Config", "Apply settings from the selected file", function()
-        if currentName == "" then
-            Window:Notify("Config", "Select or type a config name first.")
-            return
-        end
-        local ok = Window:LoadConfig(currentName)
-        Window:Notify("Config", ok and ("Loaded '" .. currentName .. "'") or "Load failed.")
-    end)
-    sApi:Button("Delete Config", "Remove the selected config file", function()
-        if currentName == "" then return end
-        Window:DeleteConfig(currentName)
-        cfgDrop.Refresh(getConfigList())
-        Window:Notify("Config", "Deleted '" .. currentName .. "'")
-    end)
-    sApi:Button("Refresh List", "Re-scan the config folder", function()
-        cfgDrop.Refresh(getConfigList())
-        Window:Notify("Config", "Config list refreshed.")
-    end)
-
-    local meta0 = readMeta()
-    sApi:Toggle("Auto-load Recent", "Load the last used config on launch",
-        meta0.autoload ~= false, function(on)
-            writeMeta({ autoload = on })
-        end)
-    sApi:Button("Reset to Defaults", "Restore every option to default values", function()
-        Window:ResetDefaults()
-        Window:Notify("Config", "All settings reset to defaults.")
-    end)
+    sApi:Section("Interface")
+    sApi:Slider("UI Scale", "Resize the whole interface", 50, 150, 88, function(v)
+        userScale = v / 100
+        applyScale()
+    end, "_uiscale", { Suffix = " %" })
+    sApi:Bind("Toggle UI Key", ToggleKey, function()
+        toggleUI()
+    end, "_togglekey", { NoList = true })
 
     sApi:Section("Appearance")
     sApi:Dropdown("UI Theme", { "GX", "Discord", "Light" }, function(v)
@@ -3066,7 +3058,7 @@ function _Catalyst:Window(opt)
         end
     end, "_theme", "GX")
 
-    accentPicker = sApi:Colorpicker("Accent Color", Theme.Accent, function(c)
+    accentPicker = sApi:Colorpicker("Accent Color", startAccent, function(c)
         _Catalyst._customAccent = true
         _Catalyst.Flags["_customaccent"] = true
         setAccent(c)
@@ -3088,20 +3080,25 @@ function _Catalyst:Window(opt)
             _Catalyst.Flags["_customaccent"] = true
             origSet(c)
         end
+        _Catalyst.Config["_accent"].Default = opt.Accent or _Catalyst.Config["_accent"].Default
     end
 
-    sApi:Slider("UI Scale", "Resize the whole interface", 50, 150, 100, function(v)
-        userScale = v / 100
-        applyScale()
-    end, "_uiscale", { Suffix = " %" })
-    sApi:Bind("Toggle UI Key", ToggleKey, function()
-        toggleUI()
-    end, "_togglekey", { NoList = true })
+    if _Catalyst._customAccent then
+        setAccent(Theme.Accent)
+        if accentPicker and accentPicker.SetSilent then
+            accentPicker.SetSilent(Theme.Accent)
+        end
+    end
 
     sApi:Section("Keybind List")
     sApi:Toggle("Show Keybind List", "Display active keybinds on screen", true, function(on)
         setKeybindListVisible(on)
     end, "_kblist")
+    sApi:Button("Reset Keybind Position", "Move keybind list back to default position", function()
+        kbFrame.Position = KB_DEFAULT_POS
+        _Catalyst.Flags["_kbpos"] = _Catalyst.Config["_kbpos"].Default
+        Window:Notify("Keybinds", "Position reset.")
+    end)
 
     sApi:Section("Watermark")
     sApi:Toggle("Show Watermark", "Display the watermark overlay", true, function(on)
@@ -3123,9 +3120,14 @@ function _Catalyst:Window(opt)
     sApi:Textbox("Avatar Image", "rbxassetid number or asset url", false, function(t)
         setWatermarkImage(t)
     end, "_wmimage")
-    sApi:Slider("Watermark Scale", "Resize the watermark", 50, 200, 100, function(v)
+    sApi:Slider("Watermark Scale", "Resize the watermark", 50, 200, 88, function(v)
         applyWmScale(v / 100)
     end, "_wmscale", { Suffix = " %" })
+    sApi:Button("Reset Watermark Position", "Move watermark back to default position", function()
+        wmFrame.Position = WM_DEFAULT_POS
+        _Catalyst.Flags["_wmpos"] = _Catalyst.Config["_wmpos"].Default
+        Window:Notify("Watermark", "Position reset.")
+    end)
 
     do
         _Catalyst.Config["_wmpos"] = {
@@ -3152,15 +3154,45 @@ function _Catalyst:Window(opt)
         _Catalyst.Flags["_wmpos"] = _Catalyst.Config["_wmpos"].Default
     end
 
-    sApi:Button("Reset Watermark Position", "Move watermark back to default position", function()
-        wmFrame.Position = WM_DEFAULT_POS
-        _Catalyst.Flags["_wmpos"] = _Catalyst.Config["_wmpos"].Default
-        Window:Notify("Watermark", "Position reset.")
+    sApi:Section("Configuration")
+    local nameBox = sApi:Textbox("Config Name", "", false, function(t) currentName = t end)
+    cfgDrop = sApi:Dropdown("Saved Configs", getConfigList(), function(v)
+        currentName = v
+        nameBox.Set(v)
     end)
-        sApi:Button("Reset Keybind List Position", "Move keybind list back to default position", function()
-        kbFrame.Position = KB_DEFAULT_POS
-        _Catalyst.Flags["_kbpos"] = _Catalyst.Config["_kbpos"].Default
-        Window:Notify("Keybinds", "Position reset.")
+    sApi:Button("Save Config", "Write current settings to a file", function()
+        if currentName == "" then
+            Window:Notify("Config", "Type a config name first.")
+            return
+        end
+        local ok = Window:SaveConfig(currentName)
+        cfgDrop.Refresh(getConfigList())
+        Window:Notify("Config", ok and ("Saved '" .. currentName .. "'") or "Save failed.")
+    end)
+    sApi:Button("Load Config", "Apply settings from the selected file", function()
+        if currentName == "" then
+            Window:Notify("Config", "Select or type a config name first.")
+            return
+        end
+        local ok = Window:LoadConfig(currentName)
+        cfgDrop.Refresh(getConfigList())
+        Window:Notify("Config", ok and ("Loaded '" .. currentName .. "'") or "Load failed.")
+    end)
+    sApi:Button("Delete Config", "Remove the selected config file", function()
+        if currentName == "" then return end
+        Window:DeleteConfig(currentName)
+        cfgDrop.Refresh(getConfigList())
+        Window:Notify("Config", "Deleted '" .. currentName .. "'")
+    end)
+
+    local meta0 = readMeta()
+    sApi:Toggle("Auto-load Recent", "Load the last used config on launch",
+        meta0.autoload ~= false, function(on)
+            writeMeta({ autoload = on })
+        end)
+    sApi:Button("Reset to Defaults", "Restore every option to default values", function()
+        Window:ResetDefaults()
+        Window:Notify("Config", "All settings reset to defaults.")
     end)
 
     sApi:Section("About")
@@ -3220,12 +3252,24 @@ function _Catalyst:Window(opt)
         didInit = true
         cfgDrop.Refresh(getConfigList())
         local meta = readMeta()
+        local loaded = false
+        local loadedCustomAccent = false
         if meta.autoload ~= false and meta.recent then
             local ok = Window:LoadConfig(meta.recent)
             if ok then
+                loaded = true
+                loadedCustomAccent = _Catalyst._customAccent and true or false
                 currentName = meta.recent
                 nameBox.Set(meta.recent)
                 Window:Notify("Config", "Auto-loaded '" .. meta.recent .. "'")
+            end
+        end
+        if _Catalyst.__optAccent and (not loaded or not loadedCustomAccent) then
+            _Catalyst._customAccent = true
+            _Catalyst.Flags["_customaccent"] = true
+            setAccent(_Catalyst.__optAccent)
+            if accentPicker and accentPicker.SetSilent then
+                accentPicker.SetSilent(_Catalyst.__optAccent)
             end
         end
         applyAllVisuals()
