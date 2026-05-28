@@ -1811,7 +1811,8 @@ function _Catalyst:Window(opt)
         header.Parent = f
 
         local accentLine = Instance.new("Frame")
-        accentLine.Size = UDim2.new(1, 0, 0, 2)
+        accentLine.Size = UDim2.new(1, -16, 0, 2)
+        accentLine.Position = UDim2.new(0, 8, 0, 0)
         accentLine.BorderSizePixel = 0
         accentLine.BackgroundColor3 = Theme.Accent
         accentLine.Parent = header
@@ -3365,6 +3366,16 @@ function _Catalyst:Window(opt)
         userScale = v / 100
         applyScale()
     end, "_uiscale", { Suffix = " %" })
+        sApi:Toggle("Streamer Mode", "Hide watermark when UI is closed", false, function(on)
+        streamerMode = on
+        if wmVisible then
+            if streamerMode then
+                wmFrame.Visible = isOpen
+            else
+                wmFrame.Visible = true
+            end
+        end
+    end, "_streamermode")
     sApi:Bind("Toggle UI Key", ToggleKey, function()
         toggleUI()
     end, "_togglekey", { NoList = true })
@@ -3430,16 +3441,6 @@ function _Catalyst:Window(opt)
     sApi:Toggle("Show Watermark", "Display the watermark overlay", true, function(on)
         setWatermarkVisible(on)
     end, "_wmshow")
-    sApi:Toggle("Streamer Mode", "Hide watermark when UI is closed", false, function(on)
-        streamerMode = on
-        if wmVisible then
-            if streamerMode then
-                wmFrame.Visible = isOpen
-            else
-                wmFrame.Visible = true
-            end
-        end
-    end, "_streamermode")
     sApi:Textbox("Display Name", "Custom name shown on the watermark", false, function(t)
         setWatermarkName(t)
     end, "_wmname")
