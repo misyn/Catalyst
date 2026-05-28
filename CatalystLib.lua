@@ -1697,7 +1697,7 @@ function _Catalyst:Window(opt)
     uiScale.Scale = 0
     uiScale.Parent = MainFrame
 
-    local fitScale, userScale, isOpen = 1, 0.88, true
+    local fitScale, userScale, isOpen = 1, 0.89, true
     local function targetScale() return fitScale * userScale end
     local function computeFit()
         local cam = workspace.CurrentCamera
@@ -2425,8 +2425,9 @@ function _Catalyst:Window(opt)
     taskLib.spawn(function()
         while alive() do
             local t = os.date("*t")
-            local dateStr = string.format("%02d/%02d/%04d %02d:%02d:%02d",
-                t.month, t.day, t.year, t.hour, t.min, t.sec)
+            local dateStr = string.format("%02d/%02d/%04d",
+                t.month, t.day, t.year)
+                
             wmSub.Text = getClientId() .. "  |  " .. dateStr
             taskLib.wait(1)
         end
