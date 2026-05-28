@@ -3294,34 +3294,6 @@ function _Catalyst:Window(opt)
     computeFit()
     tween(uiScale, 0.45, { Scale = targetScale() }, Enum.EasingStyle.Quart)
 
-function Window:Startup()
-    local meta = readMeta()
-    
-    if not meta then
-        return false
-    end
-
-    local autoload = meta.autoload
-    if not autoload or autoload == "" then
-        return false
-    end
-
-    local ok = Window:LoadConfig(autoload)
-    if not ok then
-        return false
-    end
-
-    currentName = autoload
-
-    if nameBox and nameBox.Set then
-        nameBox.Set(autoload)
-    end
-
-    applyAllVisuals()
-
-    return true
-end
-    
     return Window
 end
 
