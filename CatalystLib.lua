@@ -79,6 +79,40 @@ local Themes = {
 }
 _Catalyst.Themes = Themes
 
+-- Global font and padding state (applied to all new/existing text elements via listeners)
+local GlobalFont    = Enum.Font.GothamMedium
+local GlobalPadding = 6  -- px, used for card inner padding
+
+local FontListeners    = {}
+local PaddingListeners = {}
+
+local function onFont(fn)    FontListeners[#FontListeners + 1] = fn end
+local function onPadding(fn) PaddingListeners[#PaddingListeners + 1] = fn end
+
+local function setGlobalFont(fontEnum)
+    GlobalFont = fontEnum
+    for _, fn in ipairs(FontListeners) do pcall(fn, fontEnum) end
+end
+
+local function setGlobalPadding(px)
+    GlobalPadding = px
+    for _, fn in ipairs(PaddingListeners) do pcall(fn, px) end
+end
+
+local FONT_OPTIONS = {
+    "GothamMedium",
+    "Gotham",
+    "GothamBold",
+    "SourceSans",
+    "SourceSansBold",
+    "RobotoMono",
+    "Code",
+    "Arial",
+    "ArialBold",
+    "Ubuntu",
+    "Nunito",
+}
+
 local AccentObjects   = {}
 local AccentListeners = {}
 local ThemeListeners  = {}
@@ -369,6 +403,20 @@ local function makeAPI(scroll)
     p.PaddingBottom = UDim.new(0, 10)
     p.Parent = scroll
 
+    -- Track padding UIPadding instances so we can update them live
+    local paddingInstances = {}
+    local function regPad(padInst)
+        paddingInstances[#paddingInstances + 1] = padInst
+        onPadding(function(px)
+            local ud = UDim.new(0, px)
+            padInst.PaddingTop    = ud
+            padInst.PaddingBottom = ud
+            padInst.PaddingLeft   = ud
+            padInst.PaddingRight  = ud
+        end)
+        return padInst
+    end
+
     scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
     scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 
@@ -417,18 +465,36 @@ local function makeAPI(scroll)
         return f
     end
 
+    -- All text labels created here register for font updates
+    local textObjects = {}
+    local function regText(obj, isBold, isSubText)
+        textObjects[#textObjects + 1] = { obj = obj, bold = isBold, sub = isSubText }
+        onFont(function(fontEnum)
+            if isBold then
+                -- keep bold as bold variant if available, else use same font
+                local boldName = fontEnum.Name .. "Bold"
+                local ok, fe = pcall(function() return Enum.Font[boldName] end)
+                obj.Font = (ok and fe) and fe or fontEnum
+            else
+                obj.Font = fontEnum
+            end
+        end)
+        return obj
+    end
+
     local function makeTitle(card, text, yOff, widthOffset)
         local t = Instance.new("TextLabel")
         t.BackgroundTransparency = 1
         t.Position = UDim2.new(0, 12, 0, yOff)
         t.Size = UDim2.new(1, widthOffset, 0, 18)
-        t.Font = Enum.Font.GothamMedium
+        t.Font = GlobalFont
         t.Text = text
         t.TextColor3 = Theme.Text
         t.TextSize = 14
         t.TextXAlignment = Enum.TextXAlignment.Left
         t.TextTruncate = Enum.TextTruncate.AtEnd
         t.Parent = card
+        regText(t, false, false)
         return t
     end
 
@@ -437,7 +503,7 @@ local function makeAPI(scroll)
         d.BackgroundTransparency = 1
         d.Position = UDim2.new(0, 12, 0, yOff)
         d.Size = UDim2.new(1, -24, 0, 28)
-        d.Font = Enum.Font.Gotham
+        d.Font = GlobalFont
         d.Text = text
         d.TextColor3 = Theme.SubText
         d.TextSize = 12
@@ -446,6 +512,7 @@ local function makeAPI(scroll)
         d.TextXAlignment = Enum.TextXAlignment.Left
         d.TextYAlignment = Enum.TextYAlignment.Top
         d.Parent = card
+        regText(d, false, true)
         return d
     end
 
@@ -575,6 +642,7 @@ local function makeAPI(scroll)
         l.TextXAlignment = Enum.TextXAlignment.Left
         l.TextTruncate = Enum.TextTruncate.AtEnd
         l.Parent = f
+        regText(l, true, false)
 
         local chev = Instance.new("TextLabel")
         chev.BackgroundTransparency = 1
@@ -631,13 +699,14 @@ local function makeAPI(scroll)
         l.BackgroundTransparency = 1
         l.Position = UDim2.new(0, 12, 0, 0)
         l.Size = UDim2.new(1, -24, 1, 0)
-        l.Font = Enum.Font.Gotham
+        l.Font = GlobalFont
         l.Text = text
         l.TextColor3 = Theme.SubText
         l.TextSize = 13
         l.TextWrapped = true
         l.TextXAlignment = Enum.TextXAlignment.Left
         l.Parent = card
+        regText(l, false, true)
         register(card, text, "card")
         return { Set = function(t) l.Text = t end }
     end
@@ -762,12 +831,13 @@ local function makeAPI(scroll)
             chipLbl.BackgroundTransparency = 1
             chipLbl.Size = UDim2.new(1, -6, 1, 0)
             chipLbl.Position = UDim2.new(0, 3, 0, 0)
-            chipLbl.Font = Enum.Font.GothamMedium
+            chipLbl.Font = GlobalFont
             chipLbl.Text = kbKey
             chipLbl.TextColor3 = Theme.SubText
             chipLbl.TextSize = 11
             chipLbl.TextTruncate = Enum.TextTruncate.AtEnd
             chipLbl.Parent = chip
+            regText(chipLbl, false, true)
 
             local chipBtn = Instance.new("TextButton")
             chipBtn.BackgroundTransparency = 1
@@ -948,26 +1018,28 @@ local function makeAPI(scroll)
         title.BackgroundTransparency = 1
         title.Position = UDim2.new(0, 12, 0, 0)
         title.Size = UDim2.new(1, -122, 0, 38)
-        title.Font = Enum.Font.GothamMedium
+        title.Font = GlobalFont
         title.Text = text
         title.TextColor3 = Theme.Text
         title.TextSize = 14
         title.TextXAlignment = Enum.TextXAlignment.Left
         title.TextTruncate = Enum.TextTruncate.AtEnd
         title.Parent = card
+        regText(title, false, false)
 
         local sel = Instance.new("TextLabel")
         sel.BackgroundTransparency = 1
         sel.AnchorPoint = Vector2.new(1, 0)
         sel.Position = UDim2.new(1, -34, 0, 0)
         sel.Size = UDim2.new(0, 86, 0, 38)
-        sel.Font = Enum.Font.Gotham
+        sel.Font = GlobalFont
         sel.Text = default or "Select..."
         sel.TextColor3 = Theme.SubText
         sel.TextSize = 13
         sel.TextXAlignment = Enum.TextXAlignment.Right
         sel.TextTruncate = Enum.TextTruncate.AtEnd
         sel.Parent = card
+        regText(sel, false, true)
 
         local arrow = Instance.new("TextLabel")
         arrow.BackgroundTransparency = 1
@@ -1027,13 +1099,14 @@ local function makeAPI(scroll)
             it.Size = UDim2.new(1, 0, 0, 25)
             it.BackgroundColor3 = Theme.Panel
             it.AutoButtonColor = false
-            it.Font = Enum.Font.Gotham
+            it.Font = GlobalFont
             it.Text = tostring(v)
             it.TextColor3 = Theme.SubText
             it.TextSize = 13
             it.TextTruncate = Enum.TextTruncate.AtEnd
             it.Parent = holder
             corner(it, 4)
+            regText(it, false, true)
             it.MouseEnter:Connect(function()
                 tween(it, 0.12, { BackgroundColor3 = Theme.Hover, TextColor3 = Theme.Text })
             end)
@@ -1081,26 +1154,28 @@ local function makeAPI(scroll)
         title.BackgroundTransparency = 1
         title.Position = UDim2.new(0, 12, 0, 0)
         title.Size = UDim2.new(1, -150, 0, 38)
-        title.Font = Enum.Font.GothamMedium
+        title.Font = GlobalFont
         title.Text = text
         title.TextColor3 = Theme.Text
         title.TextSize = 14
         title.TextXAlignment = Enum.TextXAlignment.Left
         title.TextTruncate = Enum.TextTruncate.AtEnd
         title.Parent = card
+        regText(title, false, false)
 
         local sel = Instance.new("TextLabel")
         sel.BackgroundTransparency = 1
         sel.AnchorPoint = Vector2.new(1, 0)
         sel.Position = UDim2.new(1, -34, 0, 0)
         sel.Size = UDim2.new(0, 130, 0, 38)
-        sel.Font = Enum.Font.Gotham
+        sel.Font = GlobalFont
         sel.Text = "None"
         sel.TextColor3 = Theme.SubText
         sel.TextSize = 13
         sel.TextXAlignment = Enum.TextXAlignment.Right
         sel.TextTruncate = Enum.TextTruncate.AtEnd
         sel.Parent = card
+        regText(sel, false, true)
 
         local arrow = Instance.new("TextLabel")
         arrow.BackgroundTransparency = 1
@@ -1229,13 +1304,14 @@ local function makeAPI(scroll)
             nameLbl.BackgroundTransparency = 1
             nameLbl.Position = UDim2.new(0, 30, 0, 0)
             nameLbl.Size = UDim2.new(1, -36, 1, 0)
-            nameLbl.Font = Enum.Font.Gotham
+            nameLbl.Font = GlobalFont
             nameLbl.Text = tostring(v)
             nameLbl.TextColor3 = Theme.SubText
             nameLbl.TextSize = 13
             nameLbl.TextXAlignment = Enum.TextXAlignment.Left
             nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
             nameLbl.Parent = row
+            regText(nameLbl, false, true)
 
             local function update()
                 local on = isSel(v)
@@ -1369,13 +1445,14 @@ local function makeAPI(scroll)
         rbRow.Size = UDim2.new(1, -24, 0, 22)
         rbRow.BackgroundTransparency = 1
         rbRow.Text = "Rainbow"
-        rbRow.Font = Enum.Font.Gotham
+        rbRow.Font = GlobalFont
         rbRow.TextColor3 = Theme.SubText
         rbRow.TextSize = 13
         rbRow.TextXAlignment = Enum.TextXAlignment.Left
         rbRow.AutoButtonColor = false
         rbRow.Visible = false
         rbRow.Parent = card
+        regText(rbRow, false, true)
 
         local rbPill = Instance.new("Frame")
         rbPill.AnchorPoint = Vector2.new(1, 0.5)
@@ -1495,12 +1572,13 @@ local function makeAPI(scroll)
         modeLbl.AnchorPoint = Vector2.new(1, 0.5)
         modeLbl.Position = UDim2.new(1, -104, 0.5, 0)
         modeLbl.Size = UDim2.new(0, 50, 0, 16)
-        modeLbl.Font = Enum.Font.Gotham
+        modeLbl.Font = GlobalFont
         modeLbl.Text = string.lower(mode)
         modeLbl.TextColor3 = Theme.SubText
         modeLbl.TextSize = 11
         modeLbl.TextXAlignment = Enum.TextXAlignment.Right
         modeLbl.Parent = card
+        regText(modeLbl, false, true)
 
         local box = Instance.new("Frame")
         box.AnchorPoint = Vector2.new(1, 0.5)
@@ -1516,12 +1594,13 @@ local function makeAPI(scroll)
         keyLbl.BackgroundTransparency = 1
         keyLbl.Size = UDim2.new(1, -8, 1, 0)
         keyLbl.Position = UDim2.new(0, 4, 0, 0)
-        keyLbl.Font = Enum.Font.GothamMedium
+        keyLbl.Font = GlobalFont
         keyLbl.Text = key
         keyLbl.TextColor3 = Theme.SubText
         keyLbl.TextSize = 12
         keyLbl.TextTruncate = Enum.TextTruncate.AtEnd
         keyLbl.Parent = box
+        regText(keyLbl, false, true)
 
         local active = false
         local function bindFlashOn()
@@ -1656,7 +1735,7 @@ local function makeAPI(scroll)
         tb.BackgroundTransparency = 1
         tb.Size = UDim2.new(1, -16, 1, 0)
         tb.Position = UDim2.new(0, 8, 0, 0)
-        tb.Font = Enum.Font.Gotham
+        tb.Font = GlobalFont
         tb.PlaceholderText = "..."
         tb.Text = ""
         tb.TextColor3 = Theme.Text
@@ -1666,6 +1745,7 @@ local function makeAPI(scroll)
         tb.TextXAlignment = Enum.TextXAlignment.Left
         tb.TextTruncate = Enum.TextTruncate.AtEnd
         tb.Parent = frame
+        regText(tb, false, false)
 
         tb.FocusLost:Connect(function(enter)
             if enter then
@@ -1866,13 +1946,14 @@ function _Catalyst:Window(opt)
         sub.BackgroundTransparency = 1
         sub.Position = UDim2.new(0, 28, 0, 17)
         sub.Size = UDim2.new(1, -210, 0, 12)
-        sub.Font = Enum.Font.Gotham
+        sub.Font = GlobalFont
         sub.Text = SubTitle
         sub.TextColor3 = Theme.SubText
         sub.TextSize = 11
         sub.TextXAlignment = Enum.TextXAlignment.Left
         sub.TextTruncate = Enum.TextTruncate.AtEnd
         sub.Parent = contentPanel.header
+        onFont(function(fe) sub.Font = fe end)
 
         local searchFrame = Instance.new("Frame")
         searchFrame.AnchorPoint = Vector2.new(1, 0.5)
@@ -1907,7 +1988,7 @@ function _Catalyst:Window(opt)
         searchBox.BackgroundTransparency = 1
         searchBox.Position = UDim2.new(0, 24, 0, 0)
         searchBox.Size = UDim2.new(1, -32, 1, 0)
-        searchBox.Font = Enum.Font.Gotham
+        searchBox.Font = GlobalFont
         searchBox.PlaceholderText = "Search all tabs..."
         searchBox.Text = ""
         searchBox.TextColor3 = Theme.Text
@@ -1917,6 +1998,7 @@ function _Catalyst:Window(opt)
         searchBox.TextXAlignment = Enum.TextXAlignment.Left
         searchBox.TextTruncate = Enum.TextTruncate.AtEnd
         searchBox.Parent = searchFrame
+        onFont(function(fe) searchBox.Font = fe end)
 
         local aggScroll = Instance.new("ScrollingFrame")
         aggScroll.Name = "_AggregateSearch"
@@ -1944,12 +2026,13 @@ function _Catalyst:Window(opt)
         local aggEmpty = Instance.new("TextLabel")
         aggEmpty.BackgroundTransparency = 1
         aggEmpty.Size = UDim2.new(1, 0, 0, 40)
-        aggEmpty.Font = Enum.Font.GothamMedium
+        aggEmpty.Font = GlobalFont
         aggEmpty.Text = "No results"
         aggEmpty.TextColor3 = Theme.SubText
         aggEmpty.TextSize = 13
         aggEmpty.Visible = false
         aggEmpty.Parent = aggScroll
+        onFont(function(fe) aggEmpty.Font = fe end)
 
         local borrowed = {}
         local tabHeaders = {}
@@ -1971,6 +2054,11 @@ function _Catalyst:Window(opt)
                 f.TextTruncate = Enum.TextTruncate.AtEnd
                 f.Parent = aggScroll
                 tabHeaders[tabHeaderPool] = f
+                onFont(function(fe)
+                    local boldName = fe.Name .. "Bold"
+                    local ok, bold = pcall(function() return Enum.Font[boldName] end)
+                    f.Font = (ok and bold) and bold or fe
+                end)
             end
             f.Text = string.upper(text)
             f.TextColor3 = Theme.Text
@@ -2008,6 +2096,11 @@ function _Catalyst:Window(opt)
                 lbl.TextTruncate = Enum.TextTruncate.AtEnd
                 lbl.Parent = f
                 secHeaders[headerPool] = f
+                onFont(function(fe)
+                    local boldName = fe.Name .. "Bold"
+                    local ok, bold = pcall(function() return Enum.Font[boldName] end)
+                    lbl.Font = (ok and bold) and bold or fe
+                end)
             end
             f.Visible = true
             f.LayoutOrder = aggNext()
@@ -2553,12 +2646,17 @@ function _Catalyst:Window(opt)
     wmLabel.TextTruncate = Enum.TextTruncate.AtEnd
     wmLabel.ZIndex = 101
     wmLabel.Parent = wmFrame
+    onFont(function(fe)
+        local boldName = fe.Name .. "Bold"
+        local ok, bold = pcall(function() return Enum.Font[boldName] end)
+        wmLabel.Font = (ok and bold) and bold or fe
+    end)
 
     local wmSub = Instance.new("TextLabel")
     wmSub.BackgroundTransparency = 1
     wmSub.Position = UDim2.new(0, 54, 0, 28)
     wmSub.Size = UDim2.new(1, -62, 0, 16)
-    wmSub.Font = Enum.Font.Gotham
+    wmSub.Font = GlobalFont
     wmSub.Text = ""
     wmSub.TextColor3 = Theme.SubText
     wmSub.TextSize = 10
@@ -2566,6 +2664,7 @@ function _Catalyst:Window(opt)
     wmSub.TextTruncate = Enum.TextTruncate.AtEnd
     wmSub.ZIndex = 101
     wmSub.Parent = wmFrame
+    onFont(function(fe) wmSub.Font = fe end)
 
     onTheme(function()
         wmFrame.BackgroundColor3 = Theme.Panel
@@ -2640,7 +2739,6 @@ function _Catalyst:Window(opt)
             local t = os.date("*t")
             local dateStr = string.format("%02d/%02d/%04d",
                 t.month, t.day, t.year)
-
             wmSub.Text = getClientId() .. "  |  " .. dateStr
             taskLib.wait(1)
         end
@@ -2698,6 +2796,11 @@ function _Catalyst:Window(opt)
     kbTitle.TextXAlignment = Enum.TextXAlignment.Left
     kbTitle.ZIndex = 102
     kbTitle.Parent = kbHeader
+    onFont(function(fe)
+        local boldName = fe.Name .. "Bold"
+        local ok, bold = pcall(function() return Enum.Font[boldName] end)
+        kbTitle.Font = (ok and bold) and bold or fe
+    end)
 
     local kbBody = Instance.new("Frame")
     kbBody.Position = UDim2.new(0, 0, 0, 30)
@@ -2819,7 +2922,7 @@ function _Catalyst:Window(opt)
         nameLbl.BackgroundTransparency = 1
         nameLbl.Position = UDim2.new(0, 16, 0, 0)
         nameLbl.Size = UDim2.new(1, -86, 1, 0)
-        nameLbl.Font = Enum.Font.GothamMedium
+        nameLbl.Font = GlobalFont
         nameLbl.Text = tostring(name)
         nameLbl.TextColor3 = Theme.SubText
         nameLbl.TextSize = 12
@@ -2827,6 +2930,7 @@ function _Catalyst:Window(opt)
         nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
         nameLbl.ZIndex = 102
         nameLbl.Parent = row
+        onFont(function(fe) nameLbl.Font = fe end)
 
         local keyLbl = Instance.new("TextLabel")
         keyLbl.BackgroundTransparency = 1
@@ -2841,6 +2945,11 @@ function _Catalyst:Window(opt)
         keyLbl.TextTruncate = Enum.TextTruncate.AtEnd
         keyLbl.ZIndex = 102
         keyLbl.Parent = row
+        onFont(function(fe)
+            local boldName = fe.Name .. "Bold"
+            local ok, bold = pcall(function() return Enum.Font[boldName] end)
+            keyLbl.Font = (ok and bold) and bold or fe
+        end)
 
         kbRows[#kbRows + 1] = row
 
@@ -2928,13 +3037,14 @@ function _Catalyst:Window(opt)
         lbl.BackgroundTransparency = 1
         lbl.Position = UDim2.new(0, icon and 38 or 14, 0, 0)
         lbl.Size = UDim2.new(1, icon and -46 or -22, 1, 0)
-        lbl.Font = Enum.Font.GothamMedium
+        lbl.Font = GlobalFont
         lbl.Text = name
         lbl.TextColor3 = Theme.SubText
         lbl.TextSize = 14
         lbl.TextXAlignment = Enum.TextXAlignment.Left
         lbl.TextTruncate = Enum.TextTruncate.AtEnd
         lbl.Parent = btn
+        onFont(function(fe) lbl.Font = fe end)
 
         local entry = { container = container, btn = btn, lbl = lbl, indicator = indicator, icon = ic, capi = capi }
 
@@ -3077,7 +3187,7 @@ function _Catalyst:Window(opt)
         durLbl.AnchorPoint = Vector2.new(1, 0)
         durLbl.Position = UDim2.new(1, -14, 0, 10)
         durLbl.Size = UDim2.new(0, 44, 0, 18)
-        durLbl.Font = Enum.Font.GothamMedium
+        durLbl.Font = GlobalFont
         durLbl.Text = string.format("%.1fs", duration)
         durLbl.TextColor3 = Theme.SubText
         durLbl.TextTransparency = 1
@@ -3091,7 +3201,7 @@ function _Catalyst:Window(opt)
             descLbl.BackgroundTransparency = 1
             descLbl.Position = UDim2.new(0, 14, 0, 30)
             descLbl.Size = UDim2.new(1, -28, 0, 32)
-            descLbl.Font = Enum.Font.Gotham
+            descLbl.Font = GlobalFont
             descLbl.Text = desc
             descLbl.TextColor3 = Theme.SubText
             descLbl.TextTransparency = 1
@@ -3220,55 +3330,26 @@ function _Catalyst:Window(opt)
     end
 
     function Window:LoadConfig(name)
-        if not name or name == "" then
-            return false
-        end
-
+        if not name or name == "" then return false end
         local path = ConfigFolder .. "/" .. name .. ".json"
-
-        if not FileSystem.exists(path) then
-            return false
-        end
-
+        if not FileSystem.exists(path) then return false end
         local raw = FileSystem.read(path)
-
-        if not raw then
-            return false
-        end
-
-        local ok, data = pcall(function()
-            return HttpService:JSONDecode(raw)
-        end)
-
-        if not ok or type(data) ~= "table" then
-            return false
-        end
+        if not raw then return false end
+        local ok, data = pcall(function() return HttpService:JSONDecode(raw) end)
+        if not ok or type(data) ~= "table" then return false end
 
         local loadedTheme = nil
-
         if data["_theme"] ~= nil and _Catalyst.Config["_theme"] then
             loadedTheme = deserialize(data["_theme"])
-
             _Catalyst._customAccent = false
             _Catalyst.Flags["_customaccent"] = false
-
-            pcall(function()
-                _Catalyst.Config["_theme"].Set(loadedTheme)
-            end)
+            pcall(function() _Catalyst.Config["_theme"].Set(loadedTheme) end)
         end
 
         for flag, val in pairs(data) do
-            if flag ~= "_theme"
-            and flag ~= "_accent"
-            and flag ~= "_customaccent" then
-
+            if flag ~= "_theme" and flag ~= "_accent" and flag ~= "_customaccent" then
                 local c = _Catalyst.Config[flag]
-
-                if c then
-                    pcall(function()
-                        c.Set(deserialize(val))
-                    end)
-                end
+                if c then pcall(function() c.Set(deserialize(val)) end) end
             end
         end
 
@@ -3279,40 +3360,23 @@ function _Catalyst:Window(opt)
         if wantsCustom then
             _Catalyst._customAccent = true
             _Catalyst.Flags["_customaccent"] = true
-
             local savedAccent = deserialize(data["_accent"])
             _Catalyst.__resolvedAccent = savedAccent
-
-            pcall(function()
-                _Catalyst.Config["_accent"].Set(savedAccent)
-            end)
-
-            if _Catalyst.__accentSilent then
-                _Catalyst.__accentSilent(savedAccent)
-            end
+            pcall(function() _Catalyst.Config["_accent"].Set(savedAccent) end)
+            if _Catalyst.__accentSilent then _Catalyst.__accentSilent(savedAccent) end
         else
             _Catalyst._customAccent = false
             _Catalyst.Flags["_customaccent"] = false
             _Catalyst.__resolvedAccent = nil
-
-            local themeName = (type(loadedTheme) == "string" and loadedTheme)
-                or _Catalyst.Flags["_theme"]
+            local themeName = (type(loadedTheme) == "string" and loadedTheme) or _Catalyst.Flags["_theme"]
             local tt = Themes[themeName] or Theme
             local themeAccent = tt.Accent or Theme.Accent
-
             setAccent(themeAccent)
-
-            if _Catalyst.__accentSilent then
-                _Catalyst.__accentSilent(themeAccent)
-            end
+            if _Catalyst.__accentSilent then _Catalyst.__accentSilent(themeAccent) end
         end
 
-        writeMeta({
-            recent = name
-        })
-
+        writeMeta({ recent = name })
         applyAllVisuals()
-
         return true
     end
 
@@ -3346,6 +3410,9 @@ function _Catalyst:Window(opt)
         applyAllVisuals()
     end
 
+    -- =========================================================
+    -- SETTINGS PANEL
+    -- =========================================================
     local settingsScroll = Instance.new("ScrollingFrame")
     settingsScroll.Size = UDim2.new(1, 0, 1, 0)
     settingsScroll.BackgroundTransparency = 1
@@ -3366,7 +3433,7 @@ function _Catalyst:Window(opt)
         userScale = v / 100
         applyScale()
     end, "_uiscale", { Suffix = " %" })
-        sApi:Toggle("Streamer Mode", "Hide watermark when UI is closed", false, function(on)
+    sApi:Toggle("Streamer Mode", "Hide watermark when UI is closed", false, function(on)
         streamerMode = on
         if wmVisible then
             if streamerMode then
@@ -3400,6 +3467,43 @@ function _Catalyst:Window(opt)
 
     accentPickerRef = accentPicker
     _Catalyst.__accentSilent = accentPicker.SetSilent
+
+    -- ---- TEXT FONT DROPDOWN ----
+    sApi:Dropdown("Text Font", FONT_OPTIONS, function(v)
+        local ok, fe = pcall(function() return Enum.Font[v] end)
+        if ok and fe then
+            setGlobalFont(fe)
+            _Catalyst.Flags["_font"] = v
+        end
+    end, "_font", "GothamMedium")
+
+    _Catalyst.Config["_font"] = {
+        Get     = function() return GlobalFont.Name end,
+        Set     = function(v)
+            local ok, fe = pcall(function() return Enum.Font[tostring(v)] end)
+            if ok and fe then setGlobalFont(fe) end
+        end,
+        Default = "GothamMedium",
+    }
+    _Catalyst.Flags["_font"] = "GothamMedium"
+
+    -- ---- ELEMENT PADDING SLIDER ----
+    sApi:Slider("Element Padding", "Adjust inner padding on cards and elements", 2, 16, 6, function(v)
+        setGlobalPadding(v)
+        _Catalyst.Flags["_padding"] = v
+    end, "_padding", { Suffix = " px" })
+
+    _Catalyst.Config["_padding"] = {
+        Get     = function() return GlobalPadding end,
+        Set     = function(v)
+            local n = tonumber(v)
+            if n then setGlobalPadding(math.clamp(n, 2, 16)) end
+        end,
+        Default = 6,
+    }
+    _Catalyst.Flags["_padding"] = 6
+
+    -- ---- END NEW SETTINGS ----
 
     _Catalyst.Config["_customaccent"] = {
         Get     = function() return _Catalyst._customAccent and true or false end,
@@ -3627,15 +3731,17 @@ function _Catalyst:Window(opt)
         if alive() and not didInit then Window:Init() end
     end)
 
-    Window.SetAccent           = setAccent
-    Window.SetTheme            = applyTheme
-    Window.Toggle              = toggleUI
-    Window.Relayout            = function() relayout(true) end
-    Window.SetWatermarkName    = setWatermarkName
-    Window.SetWatermarkImage   = setWatermarkImage
-    Window.SetWatermarkVisible = setWatermarkVisible
+    Window.SetAccent             = setAccent
+    Window.SetTheme              = applyTheme
+    Window.Toggle                = toggleUI
+    Window.Relayout              = function() relayout(true) end
+    Window.SetWatermarkName      = setWatermarkName
+    Window.SetWatermarkImage     = setWatermarkImage
+    Window.SetWatermarkVisible   = setWatermarkVisible
     Window.SetKeybindListVisible = setKeybindListVisible
-    Window.RefreshVisuals      = function() applyAllVisuals() end
+    Window.RefreshVisuals        = function() applyAllVisuals() end
+    Window.SetFont               = setGlobalFont
+    Window.SetPadding            = setGlobalPadding
 
     relayout(false)
     computeFit()
