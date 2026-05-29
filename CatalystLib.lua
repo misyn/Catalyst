@@ -1278,7 +1278,9 @@ local function makeAPI(scroll)
         }
     end
 
-    function api:Colorpicker(text, default, callback, flag)
+    function api:Colorpicker(text, default, callback, flag, opts)
+        opts = opts or {}
+        local noRainbow = opts.NoRainbow == true
         default = default or Theme.Accent
         callback = callback or function() end
         local card = newCard(38)
@@ -1386,7 +1388,7 @@ local function makeAPI(scroll)
 
         local open = false
         local function sizeCard()
-            card.Size = UDim2.new(1, 0, 0, open and 204 or 38)
+            card.Size = UDim2.new(1, 0, 0, open and (noRainbow and 168 or 204) or 38)
         end
         local function applyColor(fire)
             local col = Color3.fromHSV(h, s, v)
@@ -1428,7 +1430,8 @@ local function makeAPI(scroll)
 
         hitOverlay(card, 38).MouseButton1Click:Connect(function()
             open = not open
-            box.Visible = open; hueBar.Visible = open; rbRow.Visible = open
+            box.Visible = open; hueBar.Visible = open
+            rbRow.Visible = open and not noRainbow
             sizeCard()
         end)
 
@@ -3171,28 +3174,83 @@ function _Catalyst:Window(opt)
 
     -- ── CUSTOM THEME BUILDER ──────────────────────────────────────────────────
     sApi:Section("Custom Theme")
-    sApi:Label("Build your own theme below. Accent is set above per-theme.")
+    sApi:Label("Build your own theme below. Changes preview live. Accent is set above per-theme.")
 
     -- Draft colors start from current theme
     local draft = {}
     for _, k in ipairs(THEME_ASPECTS) do draft[k] = Theme[k] end
     local draftAccent = Theme.Accent
 
+    -- Live-apply the draft colors to the running UI so the user sees the result instantly.
+    -- This directly mutates Theme keys and repaints descendants — same technique as applyTheme
+    -- but without touching Accent (that stays controlled by the accent picker above).
+    local function liveApplyDraft()
+        -- Build a color-swap map from old → new for every aspect key
+        local map = {}
+        for _, k in ipairs(THEME_ASPECTS) do
+            if Theme[k] ~= draft[k] then
+                map[Theme[k]] = draft[k]
+            end
+        end
+        -- Update the live Theme table
+        for _, k in ipairs(THEME_ASPECTS) do Theme[k] = draft[k] end
+
+        local function conv(c)
+            return map[c]  -- nil if no change needed
+        end
+
+        for _, obj in ipairs(ScreenGui:GetDescendants()) do
+            if obj:IsA("GuiObject") then
+                if obj.BackgroundColor3 ~= Theme.Accent then
+                    local nb = conv(obj.BackgroundColor3)
+                    if nb then obj.BackgroundColor3 = nb end
+                end
+            end
+            if obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
+                if obj.TextColor3 ~= Theme.Accent then
+                    local nt = conv(obj.TextColor3)
+                    if nt then obj.TextColor3 = nt end
+                end
+                if obj:IsA("TextBox") then
+                    local np = conv(obj.PlaceholderColor3)
+                    if np then obj.PlaceholderColor3 = np end
+                end
+            end
+            if obj:IsA("ImageLabel") or obj:IsA("ImageButton") then
+                if obj.ImageColor3 ~= Theme.Accent then
+                    local ni = conv(obj.ImageColor3)
+                    if ni then obj.ImageColor3 = ni end
+                end
+            end
+            if obj:IsA("UIStroke") then
+                if obj.Color ~= Theme.Accent then
+                    local ns = conv(obj.Color)
+                    if ns then obj.Color = ns end
+                end
+            end
+        end
+        -- Fire theme listeners so toggles/sliders etc. re-sync their state colors
+        for _, fn in ipairs(ThemeListeners) do pcall(fn, Theme) end
+    end
+
     local aspectPickers = {}
     for _, aspect in ipairs(THEME_ASPECTS) do
         local picker = sApi:Colorpicker(aspect, draft[aspect], function(c)
             draft[aspect] = c
-        end)
+            liveApplyDraft()
+        end, nil, { NoRainbow = true })
         aspectPickers[aspect] = picker
     end
-    -- Accent draft picker
+    -- Accent draft picker — rainbow allowed here since it only affects accent
     local draftAccentPicker = sApi:Colorpicker("Theme Accent", draftAccent, function(c)
         draftAccent = c
+        -- Live-apply accent preview so user sees it change
+        setAccent(c)
     end)
 
     local nameBox2 = sApi:Textbox("Theme Name", "Enter a name", false, function(t) end)
 
-    -- Helper: sync draft pickers to current theme values
+    -- Helper: sync draft pickers to current theme values (called when a theme is selected)
     local function syncDraftFromTheme()
         for _, k in ipairs(THEME_ASPECTS) do
             draft[k] = Theme[k]
@@ -3202,7 +3260,8 @@ function _Catalyst:Window(opt)
         if draftAccentPicker then draftAccentPicker.SetSilent(Theme.Accent) end
     end
 
-    -- When built-in theme changes, sync the draft so the editor shows useful defaults
+    -- When a theme is applied from the dropdown, sync the draft editor to match
+    -- (but don't live-apply — applyTheme already did the repaint)
     onTheme(syncDraftFromTheme)
 
     local customThemeEditDrop   -- dropdown for selecting which custom theme to delete/update
@@ -3243,14 +3302,16 @@ function _Catalyst:Window(opt)
 
         customThemeEditDrop = sApi:Dropdown("Custom Themes", {}, function(v)
             selectedCustomTheme = v
-            -- Load that theme's colors into the draft
+            -- Load that theme's colors into the draft and live-preview them
             if Themes[v] then
                 for _, k in ipairs(THEME_ASPECTS) do
                     draft[k] = Themes[v][k] or Theme[k]
                     if aspectPickers[k] then aspectPickers[k].SetSilent(draft[k]) end
                 end
+                liveApplyDraft()
                 draftAccent = Themes[v].Accent or Theme.Accent
                 if draftAccentPicker then draftAccentPicker.SetSilent(draftAccent) end
+                setAccent(draftAccent)
             end
         end)
 
