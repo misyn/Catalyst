@@ -771,10 +771,10 @@ local function makeAPI(scroll)
 
         onAccent(function(c)
             pill.BackgroundColor3 = state and c or Theme.Stroke
-            regBG(knob, "Text")
+            knob.BackgroundColor3 = Theme.Text
         end)
         onTheme(function()
-            regBG(knob, "Text")
+            knob.BackgroundColor3 = Theme.Text
             pill.BackgroundColor3 = state and Theme.Accent or Theme.Stroke
         end)
 
@@ -929,9 +929,9 @@ local function makeAPI(scroll)
         corner(knob, 7)
 
         onTheme(function()
-            regBG(knob, "Text")
-            regBG(track, "Stroke")
-            regText(valLbl, "Text")
+            knob.BackgroundColor3 = Theme.Text
+            track.BackgroundColor3 = Theme.Stroke
+            valLbl.TextColor3 = Theme.Text
         end)
 
         local value = default
@@ -1412,9 +1412,9 @@ local function makeAPI(scroll)
         hexBox.Parent = hexFrame
 
         onTheme(function()
-            regBG(hexFrame, "Panel")
-            regText(hexHash, "SubText")
-            regText(hexBox, "Text")
+            hexFrame.BackgroundColor3 = Theme.Panel
+            hexHash.TextColor3 = Theme.SubText
+            hexBox.TextColor3 = Theme.Text
             hexBox.PlaceholderColor3 = Theme.SubText
         end)
 
@@ -1470,8 +1470,8 @@ local function makeAPI(scroll)
         corner(rbKnob, 6)
 
         onTheme(function()
-            regBG(rbKnob, "Text")
-            regText(rbRow, "SubText")
+            rbKnob.BackgroundColor3 = Theme.Text
+            rbRow.TextColor3 = Theme.SubText
             if not rainbow then rbPill.BackgroundColor3 = Theme.Stroke end
         end)
 
@@ -1643,10 +1643,10 @@ local function makeAPI(scroll)
                 box.BackgroundColor3 = Theme.Accent; boxStroke.Color = Theme.Accent
                 keyLbl.TextColor3 = Color3.fromRGB(255,255,255)
             else
-                regStroke(boxStroke, "Stroke")
-                regText(keyLbl, "SubText")
+                boxStroke.Color = Theme.Stroke
+                keyLbl.TextColor3 = Theme.SubText
             end
-            regText(modeLbl, "SubText")
+            modeLbl.TextColor3 = Theme.SubText
         end)
 
         local listening = false
@@ -1882,7 +1882,9 @@ function _Catalyst:Window(opt)
         for _, e in ipairs(ThemeObjects) do
             if e.obj and e.obj.Parent and e.kind == "bg" then
                 pcall(function()
-                    e.obj.BackgroundTransparency = tr
+                    if e.obj.BackgroundColor3 ~= Theme.Accent then
+                        e.obj.BackgroundTransparency = tr
+                    end
                 end)
             end
         end
@@ -2204,13 +2206,13 @@ function _Catalyst:Window(opt)
         end)
 
         onTheme(function()
-            regBG(searchFrame, "Element")
-            regText(searchBox, "Text")
+            searchFrame.BackgroundColor3 = Theme.Element
+            searchBox.TextColor3 = Theme.Text
             searchBox.PlaceholderColor3 = Theme.SubText
-            regStroke(searchRing, "SubText")
-            regBG(searchHandle, "SubText")
-            regStroke(searchStroke, "Stroke")
-            regText(aggEmpty, "SubText")
+            searchRing.Color = Theme.SubText
+            searchHandle.BackgroundColor3 = Theme.SubText
+            searchStroke.Color = Theme.Stroke
+            aggEmpty.TextColor3 = Theme.SubText
             for _, f in ipairs(tabHeaders) do f.TextColor3 = Theme.Text end
             for _, f in ipairs(secHeaders) do f.Lbl.TextColor3 = Theme.SubText end
         end)
@@ -2599,10 +2601,10 @@ function _Catalyst:Window(opt)
     wmSub.Parent = wmFrame
 
     onTheme(function()
-        regBG(wmFrame, "Panel")
-        regText(wmLabel, "Text")
-        regText(wmSub, "SubText")
-        regBG(wmImage, "Element")
+        wmFrame.BackgroundColor3 = Theme.Panel
+        wmLabel.TextColor3 = Theme.Text
+        wmSub.TextColor3 = Theme.SubText
+        wmImage.BackgroundColor3 = Theme.Element
     end)
 
     local function applyWmScale(s) wmScale = s; wmUIScale.Scale = s end
@@ -2726,11 +2728,11 @@ function _Catalyst:Window(opt)
     kbPad.Parent = kbBody
 
     onTheme(function()
-        regBG(kbFrame, "Panel")
-        regBG(kbHeader, "Header")
-        regBG(kbHeaderFix, "Header")
-        regText(kbTitle, "Text")
-        regStroke(kbStroke, "Stroke")
+        kbFrame.BackgroundColor3 = Theme.Panel
+        kbHeader.BackgroundColor3 = Theme.Header
+        kbHeaderFix.BackgroundColor3 = Theme.Header
+        kbTitle.TextColor3 = Theme.Text
+        kbStroke.Color = Theme.Stroke
     end)
 
     local KB_DEFAULT_POS = UDim2.new(0, 14, 0.5, 0)
@@ -2797,6 +2799,7 @@ function _Catalyst:Window(opt)
         local nameLbl = Instance.new("TextLabel")
         nameLbl.BackgroundTransparency = 1; nameLbl.Position = UDim2.new(0, 16, 0, 0)
         nameLbl.Size = UDim2.new(1, -86, 1, 0); nameLbl.Font = GlobalFont
+        nameLbl.Text = tostring(name)
         regText(nameLbl, "SubText")
         nameLbl.TextSize = 12; nameLbl.TextXAlignment = Enum.TextXAlignment.Left
         nameLbl.TextTruncate = Enum.TextTruncate.AtEnd; nameLbl.ZIndex = 102; nameLbl.Parent = row
@@ -2909,13 +2912,13 @@ function _Catalyst:Window(opt)
             if container.Visible then indicator.BackgroundColor3 = c end
         end)
         onTheme(function()
-            regBG(btn, "Element")
+            btn.BackgroundColor3 = Theme.Element
             if container.Visible then
-                regText(lbl, "Text")
+                lbl.TextColor3 = Theme.Text
                 if ic then ic.ImageColor3 = Theme.Accent end
                 indicator.BackgroundColor3 = Theme.Accent; indicator.BackgroundTransparency = 0
             else
-                regText(lbl, "SubText")
+                lbl.TextColor3 = Theme.SubText
                 if ic then ic.ImageColor3 = Theme.SubText end
                 indicator.BackgroundTransparency = 1
             end
@@ -3276,9 +3279,14 @@ function _Catalyst:Window(opt)
     end, "_theme", "GX")
 
     -- Accent Color picker
+    local draftAccentPicker
+
     accentPicker = sApi:Colorpicker("Accent Color", startAccent, function(c)
         _Catalyst._customAccent = true; _Catalyst.Flags["_customaccent"] = true
         _Catalyst.__resolvedAccent = c; setAccent(c)
+        if draftAccentPicker and draftAccentPicker.SetSilent then
+            draftAccentPicker.SetSilent(c)
+        end
     end, "_accent")
 
     accentPickerRef = accentPicker
@@ -3303,16 +3311,16 @@ function _Catalyst:Window(opt)
     }
     _Catalyst.Flags["_font"] = "GothamMedium"
 
-    sApi:Slider("UI Transparency", "Opacity of the main window and panels", 0, 85, 0, function(v)
+    sApi:Slider("UI Transparency", "Opacity of the main window and panels", 0, 30, 0, function(v)
         applyUITransparency(v)
         _Catalyst.Flags["_uitransparency"] = v
-    end, "_uitransparency", { Suffix = " %" })
+    end, "_uitransparency", { Decimals = 1 })
 
     _Catalyst.Config["_uitransparency"] = {
         Get     = function() return GlobalTransparency end,
         Set     = function(v)
             local n = tonumber(v)
-            if n then applyUITransparency(math.clamp(math.floor(n), 0, 85)) end
+            if n then applyUITransparency(math.clamp(n, 0, 30)) end
         end,
         Default = 0,
     }
@@ -3362,7 +3370,7 @@ function _Catalyst:Window(opt)
         aspectPickers[aspect] = picker
     end
     -- Accent draft picker — rainbow allowed here since it only affects accent
-    local draftAccentPicker = sApi:Colorpicker("Theme Accent", draftAccent, function(c)
+    draftAccentPicker = sApi:Colorpicker("Theme Accent", draftAccent, function(c)
         draftAccent = c
         setAccent(c)
         if accentPickerRef and accentPickerRef.SetSilent then
