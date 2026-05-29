@@ -2997,15 +2997,12 @@ function _Catalyst:Window(opt)
 
         local barBG = Instance.new("Frame")
         barBG.AnchorPoint = Vector2.new(0, 1)
-        barBG.Position = UDim2.new(0, 0, 1, 0)
-        barBG.Size = UDim2.new(1, 0, 0, 3)
+        barBG.Position = UDim2.new(0, 8, 1, -6)
+        barBG.Size = UDim2.new(1, -16, 0, 2)
         barBG.BorderSizePixel = 0
         barBG.BackgroundTransparency = 1
         barBG.BackgroundColor3 = color
         barBG.Parent = card
-        local barCorner = Instance.new("UICorner")
-        barCorner.CornerRadius = UDim.new(1, 0)
-        barCorner.Parent = barBG
 
         local barFill = Instance.new("Frame")
         barFill.Size = UDim2.new(1, 0, 1, 0)
@@ -3013,6 +3010,10 @@ function _Catalyst:Window(opt)
         barFill.BackgroundTransparency = 1
         barFill.BorderSizePixel = 0
         barFill.Parent = barBG
+
+        local barCorner = Instance.new("UICorner")
+        barCorner.CornerRadius = UDim.new(1, 0)
+        barCorner.Parent = barFill
 
         tween(card, 0.3, { BackgroundTransparency = 0 }, Enum.EasingStyle.Quart)
         tween(st, 0.3, { Transparency = 0.4 })
