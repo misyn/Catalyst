@@ -1,5 +1,5 @@
 local _Catalyst = {}
-_Catalyst.Version = "2.8"
+_Catalyst.Version = "3.1"
 _Catalyst.RainbowColorValue = 0
 _Catalyst.HueSelectionPosition = 0
 _Catalyst.Flags = {}
@@ -82,7 +82,7 @@ local Themes = {
 _Catalyst.Themes = Themes
 
 local GlobalFont     = Enum.Font.GothamMedium
-local GlobalFontBold = Enum.Font.GothamBold  -- updated together
+local GlobalFontBold = Enum.Font.GothamBold
 
 local function boldVariant(fe)
     local name = fe.Name
@@ -149,8 +149,8 @@ local function applyThemeToObjects()
     end
 end
 
-local GlobalPadding    = 6   -- card gap / layout padding in px (2–16)
-local LayoutRefs       = {}  -- { layout = UIListLayout } entries
+local GlobalPadding    = 6
+local LayoutRefs       = {}
 
 local function regLayout(layoutObj)
     LayoutRefs[#LayoutRefs + 1] = layoutObj
@@ -411,7 +411,7 @@ local function makeAPI(scroll)
     layout.SortOrder = Enum.SortOrder.LayoutOrder
     layout.Padding   = UDim.new(0, GlobalPadding)
     layout.Parent    = scroll
-    regLayout(layout)   -- ← tracked so padding slider updates it live
+    regLayout(layout)
 
     local p = Instance.new("UIPadding")
     p.PaddingTop    = UDim.new(0, 6)
@@ -2619,6 +2619,7 @@ function _Catalyst:Window(opt)
         end
     end)
 
+    -- ─── KEYBIND FRAME ────────────────────────────────────────────────────────
     kbFrame = Instance.new("Frame")
     kbFrame.Name = "_CatalystKeybinds"
     kbFrame.AnchorPoint = Vector2.new(0, 0.5)
@@ -2750,31 +2751,51 @@ function _Catalyst:Window(opt)
         kbFrame.Visible = streamerMode and isOpen or true
     end
 
+    -- ─── FIX: keybind dot size was never set — dots were 0×0 and invisible ───
     local function keybindAdd(name, key)
         local row = Instance.new("Frame")
-        row.Size = UDim2.new(1, 0, 0, 22); row.BackgroundTransparency = 1
-        row.ZIndex = 101; row.Parent = kbBody
+        row.Size = UDim2.new(1, 0, 0, 22)
+        row.BackgroundTransparency = 1
+        row.ZIndex = 101
+        row.Parent = kbBody
 
+        -- FIX: dot now has an explicit UDim2 size so it actually renders
         local dot = Instance.new("Frame")
-        dot.AnchorPoint = Vector2.new(0, 0.5); dot.Position = UDim2.new(0, 0, 0.5, 0)
+        dot.AnchorPoint = Vector2.new(0, 0.5)
+        dot.Position = UDim2.new(0, 0, 0.5, 0)
+        dot.Size = UDim2.new(0, 8, 0, 8)          -- ← was missing, causing invisible dots
         regBG(dot, "SubText")
-        dot.BorderSizePixel = 0; dot.ZIndex = 102; dot.Parent = row; corner(dot, 4)
+        dot.BorderSizePixel = 0
+        dot.ZIndex = 102
+        dot.Parent = row
+        corner(dot, 4)
 
         local nameLbl = Instance.new("TextLabel")
-        nameLbl.BackgroundTransparency = 1; nameLbl.Position = UDim2.new(0, 16, 0, 0)
-        nameLbl.Size = UDim2.new(1, -86, 1, 0); nameLbl.Font = GlobalFont
+        nameLbl.BackgroundTransparency = 1
+        nameLbl.Position = UDim2.new(0, 16, 0, 0)
+        nameLbl.Size = UDim2.new(1, -86, 1, 0)
+        nameLbl.Font = GlobalFont
         nameLbl.Text = tostring(name)
         regText(nameLbl, "SubText")
-        nameLbl.TextSize = 12; nameLbl.TextXAlignment = Enum.TextXAlignment.Left
-        nameLbl.TextTruncate = Enum.TextTruncate.AtEnd; nameLbl.ZIndex = 102; nameLbl.Parent = row
+        nameLbl.TextSize = 12
+        nameLbl.TextXAlignment = Enum.TextXAlignment.Left
+        nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
+        nameLbl.ZIndex = 102
+        nameLbl.Parent = row
 
         local keyLbl = Instance.new("TextLabel")
-        keyLbl.BackgroundTransparency = 1; keyLbl.AnchorPoint = Vector2.new(1, 0.5)
-        keyLbl.Position = UDim2.new(1, 0, 0.5, 0); keyLbl.Size = UDim2.new(0, 66, 1, 0)
-        keyLbl.Font = GlobalFontBold; keyLbl.Text = keyNameOf(key)
-        keyLbl.TextColor3 = Theme.SubText; keyLbl.TextSize = 12
+        keyLbl.BackgroundTransparency = 1
+        keyLbl.AnchorPoint = Vector2.new(1, 0.5)
+        keyLbl.Position = UDim2.new(1, 0, 0.5, 0)
+        keyLbl.Size = UDim2.new(0, 66, 1, 0)
+        keyLbl.Font = GlobalFontBold
+        keyLbl.Text = keyNameOf(key)
+        keyLbl.TextColor3 = Theme.SubText
+        keyLbl.TextSize = 12
         keyLbl.TextXAlignment = Enum.TextXAlignment.Right
-        keyLbl.TextTruncate = Enum.TextTruncate.AtEnd; keyLbl.ZIndex = 102; keyLbl.Parent = row
+        keyLbl.TextTruncate = Enum.TextTruncate.AtEnd
+        keyLbl.ZIndex = 102
+        keyLbl.Parent = row
         tagBold(keyLbl)
 
         kbRows[#kbRows + 1] = row
@@ -2946,6 +2967,7 @@ function _Catalyst:Window(opt)
 
     local function applyNotifScale(s) notifScale = s; notifUIScale.Scale = s end
 
+    -- ─── NOTIFY with live countdown timer in top-right corner ─────────────────
     function Window:Notify(title, desc, duration, color)
         if not notifEnabled then return end
         duration = tonumber(duration) or 4
@@ -2976,6 +2998,24 @@ function _Catalyst:Window(opt)
         titleLbl.TextTruncate = Enum.TextTruncate.AtEnd
         titleLbl.Parent = card
         tagBold(titleLbl)
+
+        -- FIX: live countdown timer label in the top-right corner of the notification
+        local timerLbl = Instance.new("TextLabel")
+        timerLbl.BackgroundTransparency = 1
+        timerLbl.AnchorPoint = Vector2.new(1, 0)
+        timerLbl.Position = UDim2.new(1, -14, 0, 10)
+        timerLbl.Size = UDim2.new(0, 40, 0, 18)
+        timerLbl.Font = GlobalFont
+        timerLbl.Text = string.format("%.1fs", duration)
+        timerLbl.TextColor3 = Theme.SubText
+        timerLbl.TextTransparency = 1
+        timerLbl.TextSize = 11
+        timerLbl.TextXAlignment = Enum.TextXAlignment.Right
+        timerLbl.ZIndex = card.ZIndex + 1
+        timerLbl.Parent = card
+
+        -- Shrink title to not overlap timer
+        titleLbl.Size = UDim2.new(1, -60, 0, 18)
 
         local descLbl
         if hasDesc then
@@ -3018,6 +3058,7 @@ function _Catalyst:Window(opt)
         tween(card, 0.3, { BackgroundTransparency = 0 }, Enum.EasingStyle.Quart)
         tween(st, 0.3, { Transparency = 0.4 })
         tween(titleLbl, 0.3, { TextTransparency = 0 })
+        tween(timerLbl, 0.3, { TextTransparency = 0.3 })
         if descLbl then tween(descLbl, 0.3, { TextTransparency = 0.1 }) end
         tween(barBG, 0.3, { BackgroundTransparency = 0.7 })
         tween(barFill, 0.3, { BackgroundTransparency = 0 })
@@ -3028,12 +3069,28 @@ function _Catalyst:Window(opt)
             tween(barFill, duration - 0.3, { Size = UDim2.new(0, 0, 1, 0) }, Enum.EasingStyle.Linear)
         end)
 
+        -- Live countdown ticker
+        taskLib.spawn(function()
+            local startTime = os.clock()
+            while alive() and card.Parent do
+                local elapsed = os.clock() - startTime
+                local remaining = duration - elapsed
+                if remaining <= 0 then
+                    timerLbl.Text = "0.0s"
+                    break
+                end
+                timerLbl.Text = string.format("%.1fs", remaining)
+                taskLib.wait(0.1)
+            end
+        end)
+
         taskLib.spawn(function()
             taskLib.wait(duration + 0.05)
             if not card.Parent then return end
             tween(card, 0.25, { BackgroundTransparency = 1 })
             tween(st, 0.25, { Transparency = 1 })
             tween(titleLbl, 0.25, { TextTransparency = 1 })
+            tween(timerLbl, 0.25, { TextTransparency = 1 })
             if descLbl then tween(descLbl, 0.25, { TextTransparency = 1 }) end
             tween(barBG, 0.25, { BackgroundTransparency = 1 })
             tween(barFill, 0.25, { BackgroundTransparency = 1 })
@@ -3214,7 +3271,7 @@ function _Catalyst:Window(opt)
     local currentName = ""
     local cfgDrop
     local accentPicker
-    local themeDrop       -- the ui theme dropdown — refreshed when custom themes change
+    local themeDrop
     local startAccent = _Catalyst._customAccent and Theme.Accent or (opt.Accent or Theme.Accent)
 
     local function buildThemeList()
@@ -3339,7 +3396,7 @@ function _Catalyst:Window(opt)
 
     onTheme(syncDraftFromTheme)
 
-    local customThemeEditDrop   -- dropdown for selecting which custom theme to delete/update
+    local customThemeEditDrop
 
     local function refreshCustomThemeDropdown()
         if not customThemeEditDrop then return end
