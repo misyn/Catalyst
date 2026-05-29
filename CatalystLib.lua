@@ -2051,7 +2051,7 @@ function _Catalyst:Window(opt)
                 tagBold(f)
             end
             f.Text = string.upper(text)
-            regText(f, "Text")
+            f.TextColor3 = Theme.Text
             f.LayoutOrder = aggNext()
             f.Visible = true
             return f
@@ -2091,7 +2091,7 @@ function _Catalyst:Window(opt)
             f.Visible = true
             f.LayoutOrder = aggNext()
             f.Lbl.Text = string.upper(text)
-            regText(Lbl, "SubText")
+            f.Lbl.TextColor3 = Theme.SubText
             return f
         end
 
@@ -2909,7 +2909,8 @@ function _Catalyst:Window(opt)
     local notifyHolder = Instance.new("Frame")
     notifyHolder.AnchorPoint = Vector2.new(1, 1)
     notifyHolder.Position = UDim2.new(1, -16, 1, -16)
-    notifyHolder.Size = UDim2.new(0, NOTIF_BASE_W, 1, -32)
+    notifyHolder.Size = UDim2.new(0, NOTIF_BASE_W, 0, 0)
+    notifyHolder.AutomaticSize = Enum.AutomaticSize.Y
     notifyHolder.BackgroundTransparency = 1
     notifyHolder.Parent = ScreenGui
     local nLayout = Instance.new("UIListLayout")
@@ -2950,80 +2951,90 @@ function _Catalyst:Window(opt)
         duration = tonumber(duration) or 4
         color = color or Theme.Accent
         local hasDesc = desc ~= nil and desc ~= ""
-        local H = hasDesc and 84 or 50
+        local H = hasDesc and 84 or 54
+
         local card = Instance.new("Frame")
         regBG(card, "Panel")
-        card.BackgroundTransparency = 1; card.BorderSizePixel = 0
-        card.ClipsDescendants = true; card.Parent = notifyHolder; corner(card, 8)
+        card.Size = UDim2.new(0, NOTIF_BASE_W, 0, H)
+        card.BackgroundTransparency = 1
+        card.BorderSizePixel = 0
+        card.ClipsDescendants = true
+        card.Parent = notifyHolder
+        corner(card, 8)
         local st = stroke(card, Theme.Stroke, 1, 1)
 
         local titleLbl = Instance.new("TextLabel")
-        titleLbl.BackgroundTransparency = 1; titleLbl.Position = UDim2.new(0, 14, 0, 10)
-        titleLbl.Size = UDim2.new(1, -64, 0, 18); titleLbl.Font = GlobalFontBold
+        titleLbl.BackgroundTransparency = 1
+        titleLbl.Position = UDim2.new(0, 14, 0, 10)
+        titleLbl.Size = UDim2.new(1, -28, 0, 18)
+        titleLbl.Font = GlobalFontBold
         titleLbl.Text = title or "Notice"
         regText(titleLbl, "Text")
-        titleLbl.TextTransparency = 1; titleLbl.TextSize = 14
+        titleLbl.TextTransparency = 1
+        titleLbl.TextSize = 14
         titleLbl.TextXAlignment = Enum.TextXAlignment.Left
-        titleLbl.TextTruncate = Enum.TextTruncate.AtEnd; titleLbl.Parent = card
+        titleLbl.TextTruncate = Enum.TextTruncate.AtEnd
+        titleLbl.Parent = card
         tagBold(titleLbl)
-
-        local durLbl = Instance.new("TextLabel")
-        durLbl.BackgroundTransparency = 1; durLbl.AnchorPoint = Vector2.new(1, 0)
-        durLbl.Position = UDim2.new(1, -14, 0, 10); durLbl.Size = UDim2.new(0, 44, 0, 18)
-        durLbl.Font = GlobalFont; durLbl.Text = string.format("%.1fs", duration)
-        durLbl.TextColor3 = Theme.SubText; durLbl.TextTransparency = 1
-        durLbl.TextSize = 12; durLbl.TextXAlignment = Enum.TextXAlignment.Right; durLbl.Parent = card
 
         local descLbl
         if hasDesc then
             descLbl = Instance.new("TextLabel")
-            descLbl.BackgroundTransparency = 1; descLbl.Position = UDim2.new(0, 14, 0, 30)
-            descLbl.Size = UDim2.new(1, -28, 0, 32); descLbl.Font = GlobalFont
+            descLbl.BackgroundTransparency = 1
+            descLbl.Position = UDim2.new(0, 14, 0, 30)
+            descLbl.Size = UDim2.new(1, -28, 0, 28)
+            descLbl.Font = GlobalFont
             descLbl.Text = desc
             regText(descLbl, "SubText")
-            descLbl.TextTransparency = 1; descLbl.TextSize = 12
-            descLbl.TextWrapped = true; descLbl.TextXAlignment = Enum.TextXAlignment.Left
+            descLbl.TextTransparency = 1
+            descLbl.TextSize = 12
+            descLbl.TextWrapped = true
+            descLbl.TextXAlignment = Enum.TextXAlignment.Left
             descLbl.TextYAlignment = Enum.TextYAlignment.Top
-            descLbl.TextTruncate = Enum.TextTruncate.AtEnd; descLbl.Parent = card
+            descLbl.TextTruncate = Enum.TextTruncate.AtEnd
+            descLbl.Parent = card
         end
 
         local barBG = Instance.new("Frame")
-        barBG.AnchorPoint = Vector2.new(0, 1); barBG.Position = UDim2.new(0, 14, 1, -10)
-        regBG(barBG, "Element")
-        barBG.BackgroundTransparency = 1; barBG.BorderSizePixel = 0; barBG.Parent = card; corner(barBG, 2)
+        barBG.AnchorPoint = Vector2.new(0, 1)
+        barBG.Position = UDim2.new(0, 0, 1, 0)
+        barBG.Size = UDim2.new(1, 0, 0, 3)
+        barBG.BorderSizePixel = 0
+        barBG.BackgroundTransparency = 1
+        barBG.BackgroundColor3 = color
+        barBG.Parent = card
 
-        local bar = Instance.new("Frame")
-        bar.Size = UDim2.new(1, 0, 1, 0); bar.BackgroundColor3 = color
-        bar.BackgroundTransparency = 1; bar.BorderSizePixel = 0; bar.Parent = barBG; corner(bar, 2)
+        local barFill = Instance.new("Frame")
+        barFill.Size = UDim2.new(1, 0, 1, 0)
+        barFill.BackgroundColor3 = color
+        barFill.BackgroundTransparency = 1
+        barFill.BorderSizePixel = 0
+        barFill.Parent = barBG
 
-        tween(card, 0.3, { Size = UDim2.new(0, NOTIF_BASE_W, 0, H), BackgroundTransparency = 0 }, Enum.EasingStyle.Quart)
+        tween(card, 0.3, { BackgroundTransparency = 0 }, Enum.EasingStyle.Quart)
         tween(st, 0.3, { Transparency = 0.4 })
         tween(titleLbl, 0.3, { TextTransparency = 0 })
-        tween(durLbl, 0.3, { TextTransparency = 0 })
         if descLbl then tween(descLbl, 0.3, { TextTransparency = 0.1 }) end
-        tween(barBG, 0.3, { BackgroundTransparency = 0 })
-        tween(bar, 0.3, { BackgroundTransparency = 0 })
-        tween(bar, duration, { Size = UDim2.new(0, 0, 1, 0) }, Enum.EasingStyle.Linear)
+        tween(barBG, 0.3, { BackgroundTransparency = 0.7 })
+        tween(barFill, 0.3, { BackgroundTransparency = 0 })
 
         taskLib.spawn(function()
-            local remaining = duration
-            while remaining > 0 and card.Parent do
-                taskLib.wait(0.1); remaining = remaining - 0.1
-                if remaining < 0 then remaining = 0 end
-                if durLbl.Parent then durLbl.Text = string.format("%.1fs", remaining) end
-            end
+            taskLib.wait(0.3)
+            if not card.Parent then return end
+            tween(barFill, duration - 0.3, { Size = UDim2.new(0, 0, 1, 0) }, Enum.EasingStyle.Linear)
         end)
+
         taskLib.spawn(function()
             taskLib.wait(duration + 0.05)
             if not card.Parent then return end
-            tween(card, 0.25, { Size = UDim2.new(0, 0, 0, H), BackgroundTransparency = 1 })
+            tween(card, 0.25, { BackgroundTransparency = 1 })
             tween(st, 0.25, { Transparency = 1 })
             tween(titleLbl, 0.25, { TextTransparency = 1 })
-            tween(durLbl, 0.25, { TextTransparency = 1 })
             if descLbl then tween(descLbl, 0.25, { TextTransparency = 1 }) end
             tween(barBG, 0.25, { BackgroundTransparency = 1 })
-            tween(bar, 0.25, { BackgroundTransparency = 1 })
-            taskLib.wait(0.3); card:Destroy()
+            tween(barFill, 0.25, { BackgroundTransparency = 1 })
+            taskLib.wait(0.3)
+            if card.Parent then card:Destroy() end
         end)
     end
 
