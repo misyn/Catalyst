@@ -1874,25 +1874,6 @@ function _Catalyst:Window(opt)
     end
 
     local PanelFrames = {}
-    local GlobalTransparency = 0
-    local function applyUITransparency(pct)
-        GlobalTransparency = pct
-        local tr = pct / 100
-        MainFrame.BackgroundTransparency = tr
-        for _, e in ipairs(ThemeObjects) do
-            if e.obj and e.obj.Parent and e.kind == "bg" then
-                pcall(function()
-                    if e.obj.BackgroundColor3 ~= Theme.Accent then
-                        e.obj.BackgroundTransparency = tr
-                    end
-                end)
-            end
-        end
-        for _, pf in ipairs(PanelFrames) do
-            pf.panel.BackgroundTransparency  = tr
-            pf.header.BackgroundTransparency = tr
-        end
-    end
 
     local function makePanel(titleText)
         local f = Instance.new("Frame")
@@ -1960,9 +1941,6 @@ function _Catalyst:Window(opt)
 
     onTheme(function()
         MainFrame.BackgroundColor3 = Theme.Window
-        if GlobalTransparency and GlobalTransparency > 0 then
-            applyUITransparency(GlobalTransparency)
-        end
     end)
 
     local currentTabApi
@@ -2998,6 +2976,7 @@ function _Catalyst:Window(opt)
         local titleLbl = Instance.new("TextLabel")
         titleLbl.BackgroundTransparency = 1; titleLbl.Position = UDim2.new(0, 14, 0, 10)
         titleLbl.Size = UDim2.new(1, -64, 0, 18); titleLbl.Font = GlobalFontBold
+        titleLbl.Text = title or "Notice"
         regText(titleLbl, "Text")
         titleLbl.TextTransparency = 1; titleLbl.TextSize = 14
         titleLbl.TextXAlignment = Enum.TextXAlignment.Left
@@ -3016,6 +2995,7 @@ function _Catalyst:Window(opt)
             descLbl = Instance.new("TextLabel")
             descLbl.BackgroundTransparency = 1; descLbl.Position = UDim2.new(0, 14, 0, 30)
             descLbl.Size = UDim2.new(1, -28, 0, 32); descLbl.Font = GlobalFont
+            descLbl.Text = desc
             regText(descLbl, "SubText")
             descLbl.TextTransparency = 1; descLbl.TextSize = 12
             descLbl.TextWrapped = true; descLbl.TextXAlignment = Enum.TextXAlignment.Left
@@ -3311,21 +3291,6 @@ function _Catalyst:Window(opt)
     }
     _Catalyst.Flags["_font"] = "GothamMedium"
 
-    sApi:Slider("UI Transparency", "Opacity of the main window and panels", 0, 30, 0, function(v)
-        applyUITransparency(v)
-        _Catalyst.Flags["_uitransparency"] = v
-    end, "_uitransparency", { Decimals = 1 })
-
-    _Catalyst.Config["_uitransparency"] = {
-        Get     = function() return GlobalTransparency end,
-        Set     = function(v)
-            local n = tonumber(v)
-            if n then applyUITransparency(math.clamp(n, 0, 30)) end
-        end,
-        Default = 0,
-    }
-    _Catalyst.Flags["_uitransparency"] = 0
-
     sApi:Slider("Element Padding", "Gap between cards and elements", 2, 16, 6, function(v)
         applyGlobalPadding(v)
         _Catalyst.Flags["_padding"] = v
@@ -3357,7 +3322,6 @@ function _Catalyst:Window(opt)
         for _, k in ipairs(THEME_ASPECTS) do Theme[k] = draft[k] end
         MainFrame.BackgroundColor3 = Theme.Window
         applyThemeToObjects()
-        if GlobalTransparency > 0 then applyUITransparency(GlobalTransparency) end
         for _, fn in ipairs(ThemeListeners) do pcall(fn, Theme) end
     end
 
