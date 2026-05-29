@@ -1,5 +1,5 @@
 local _Catalyst = {}
-_Catalyst.Version = "2.8"
+_Catalyst.Version = "2.9"
 _Catalyst.RainbowColorValue = 0
 _Catalyst.HueSelectionPosition = 0
 _Catalyst.Flags = {}
@@ -1283,6 +1283,10 @@ local function makeAPI(scroll)
         local noRainbow = opts.NoRainbow == true
         default = default or Theme.Accent
         callback = callback or function() end
+
+        local OPEN_H_FULL   = 232
+        local OPEN_H_NORAIN = 196
+
         local card = newCard(38)
         register(card, text, "card")
         card.ClipsDescendants = true
@@ -1349,8 +1353,72 @@ local function makeAPI(scroll)
         corner(hueDot, 3)
         stroke(hueDot, Color3.new(0,0,0), 1, 0.3)
 
+        local hexFrame = Instance.new("Frame")
+        hexFrame.Position = UDim2.new(0, 12, 0, 171)
+        hexFrame.Size = UDim2.new(1, -24, 0, 24)
+        hexFrame.BackgroundColor3 = Theme.Panel
+        hexFrame.BorderSizePixel = 0
+        hexFrame.Visible = false
+        hexFrame.Parent = card
+        corner(hexFrame, 4)
+        stroke(hexFrame, Theme.Stroke, 1, 0)
+
+        local hexHash = Instance.new("TextLabel")
+        hexHash.BackgroundTransparency = 1
+        hexHash.Position = UDim2.new(0, 8, 0, 0)
+        hexHash.Size = UDim2.new(0, 14, 1, 0)
+        hexHash.Font = GlobalFont
+        hexHash.Text = "#"
+        hexHash.TextColor3 = Theme.SubText
+        hexHash.TextSize = 12
+        hexHash.TextXAlignment = Enum.TextXAlignment.Left
+        hexHash.Parent = hexFrame
+        tagBold(hexHash)
+
+        local hexBox = Instance.new("TextBox")
+        hexBox.BackgroundTransparency = 1
+        hexBox.Position = UDim2.new(0, 20, 0, 0)
+        hexBox.Size = UDim2.new(1, -28, 1, 0)
+        hexBox.Font = GlobalFont
+        hexBox.PlaceholderText = "FFFFFF"
+        hexBox.Text = ""
+        hexBox.TextColor3 = Theme.Text
+        hexBox.PlaceholderColor3 = Theme.SubText
+        hexBox.TextSize = 12
+        hexBox.ClearTextOnFocus = false
+        hexBox.TextXAlignment = Enum.TextXAlignment.Left
+        hexBox.MaxVisibleGraphemes = 6
+        hexBox.Parent = hexFrame
+
+        onTheme(function()
+            hexFrame.BackgroundColor3 = Theme.Panel
+            hexHash.TextColor3 = Theme.SubText
+            hexBox.TextColor3 = Theme.Text
+            hexBox.PlaceholderColor3 = Theme.SubText
+        end)
+
+        local function colorToHex(col)
+            return string.format("%02X%02X%02X",
+                math.floor(col.R * 255 + 0.5),
+                math.floor(col.G * 255 + 0.5),
+                math.floor(col.B * 255 + 0.5))
+        end
+
+        local function hexToColor(hex)
+            hex = hex:gsub("#", ""):upper()
+            if #hex == 3 then
+                hex = hex:sub(1,1):rep(2) .. hex:sub(2,2):rep(2) .. hex:sub(3,3):rep(2)
+            end
+            if #hex ~= 6 then return nil end
+            local r = tonumber(hex:sub(1,2), 16)
+            local g = tonumber(hex:sub(3,4), 16)
+            local b = tonumber(hex:sub(5,6), 16)
+            if not (r and g and b) then return nil end
+            return Color3.fromRGB(r, g, b)
+        end
+
         local rbRow = Instance.new("TextButton")
-        rbRow.Position = UDim2.new(0, 12, 0, 172)
+        rbRow.Position = UDim2.new(0, 12, 0, 202)
         rbRow.Size = UDim2.new(1, -24, 0, 22)
         rbRow.BackgroundTransparency = 1
         rbRow.Text = "Rainbow"
@@ -1388,14 +1456,22 @@ local function makeAPI(scroll)
 
         local open = false
         local function sizeCard()
-            card.Size = UDim2.new(1, 0, 0, open and (noRainbow and 168 or 204) or 38)
+            if open then
+                card.Size = UDim2.new(1, 0, 0, noRainbow and OPEN_H_NORAIN or OPEN_H_FULL)
+            else
+                card.Size = UDim2.new(1, 0, 0, 38)
+            end
         end
+
         local function applyColor(fire)
             local col = Color3.fromHSV(h, s, v)
             swatch.BackgroundColor3 = col
             box.BackgroundColor3 = Color3.fromHSV(h, 1, 1)
             boxDot.Position = UDim2.new(s, 0, 1 - v, 0)
             hueDot.Position = UDim2.new(h, 0, 0.5, 0)
+            if not hexBox:IsFocused() then
+                hexBox.Text = colorToHex(col)
+            end
             if flag then _Catalyst.Flags[flag] = col end
             if fire then pcall(callback, col) end
         end
@@ -1414,6 +1490,28 @@ local function makeAPI(scroll)
             h = x; applyColor(true)
         end)
 
+        hexBox.FocusLost:Connect(function()
+            local col = hexToColor(hexBox.Text)
+            if col then
+                h, s, v = Color3.toHSV(col)
+                applyColor(true)
+            else
+                hexBox.Text = colorToHex(Color3.fromHSV(h, s, v))
+            end
+        end)
+
+        hexBox:GetPropertyChangedSignal("Text"):Connect(function()
+            local t = hexBox.Text:gsub("[^%x]", ""):upper()
+            if t ~= hexBox.Text then hexBox.Text = t end
+            if #t == 6 then
+                local col = hexToColor(t)
+                if col and not hexBox:IsFocused() == false then
+                    h, s, v = Color3.toHSV(col)
+                    applyColor(true)
+                end
+            end
+        end)
+
         rbRow.MouseButton1Click:Connect(function()
             rainbow = not rainbow
             tween(rbPill, 0.18, { BackgroundColor3 = rainbow and Theme.Accent or Theme.Stroke })
@@ -1430,7 +1528,9 @@ local function makeAPI(scroll)
 
         hitOverlay(card, 38).MouseButton1Click:Connect(function()
             open = not open
-            box.Visible = open; hueBar.Visible = open
+            box.Visible = open
+            hueBar.Visible = open
+            hexFrame.Visible = open
             rbRow.Visible = open and not noRainbow
             sizeCard()
         end)
@@ -1662,7 +1762,7 @@ function _Catalyst:Window(opt)
     opt = opt or {}
 
     local Title        = opt.Title or "_Catalyst"
-    local SubTitle     = opt.SubTitle or opt.Sub or "GX Edition"
+    local SubTitle     = opt.SubTitle or opt.Sub or "misyn wm"
     local ConfigFolder = opt.ConfigFolder or "_CatalystConfigs"
     local ToggleKey    = opt.ToggleKey or opt.CloseBind or Enum.KeyCode.RightAlt
 
@@ -3154,9 +3254,21 @@ function _Catalyst:Window(opt)
     }
     _Catalyst.Flags["_font"] = "GothamMedium"
 
-    -- ── ELEMENT PADDING ───────────────────────────────────────────────────────
-    -- Controls UIListLayout.Padding on all content scroll areas — visibly changes
-    -- the gap between cards when dragged.
+    sApi:Slider("UI Transparency", "Opacity of the main window background", 0, 80, 0, function(v)
+        MainFrame.BackgroundTransparency = v / 100
+        _Catalyst.Flags["_uitransparency"] = v
+    end, "_uitransparency", { Suffix = " %" })
+
+    _Catalyst.Config["_uitransparency"] = {
+        Get     = function() return math.floor(MainFrame.BackgroundTransparency * 100 + 0.5) end,
+        Set     = function(v)
+            local n = tonumber(v)
+            if n then MainFrame.BackgroundTransparency = math.clamp(n, 0, 80) / 100 end
+        end,
+        Default = 0,
+    }
+    _Catalyst.Flags["_uitransparency"] = 0
+
     sApi:Slider("Element Padding", "Gap between cards and elements", 2, 16, 6, function(v)
         applyGlobalPadding(v)
         _Catalyst.Flags["_padding"] = v
@@ -3244,8 +3356,10 @@ function _Catalyst:Window(opt)
     -- Accent draft picker — rainbow allowed here since it only affects accent
     local draftAccentPicker = sApi:Colorpicker("Theme Accent", draftAccent, function(c)
         draftAccent = c
-        -- Live-apply accent preview so user sees it change
         setAccent(c)
+        if accentPickerRef and accentPickerRef.SetSilent then
+            accentPickerRef.SetSilent(c)
+        end
     end)
 
     local nameBox2 = sApi:Textbox("Theme Name", "Enter a name", false, function(t) end)
