@@ -1,5 +1,5 @@
 local _Catalyst = {}
-_Catalyst.Version = "2.9"
+_Catalyst.Version = "2.8"
 _Catalyst.RainbowColorValue = 0
 _Catalyst.HueSelectionPosition = 0
 _Catalyst.Flags = {}
@@ -1762,7 +1762,7 @@ function _Catalyst:Window(opt)
     opt = opt or {}
 
     local Title        = opt.Title or "_Catalyst"
-    local SubTitle     = opt.SubTitle or opt.Sub or "misyn wm"
+    local SubTitle     = opt.SubTitle or opt.Sub or "GX Edition"
     local ConfigFolder = opt.ConfigFolder or "_CatalystConfigs"
     local ToggleKey    = opt.ToggleKey or opt.CloseBind or Enum.KeyCode.RightAlt
 
@@ -1852,6 +1852,18 @@ function _Catalyst:Window(opt)
         elseif kbRefresh then kbRefresh() end
     end
 
+    local PanelFrames = {}
+    local GlobalTransparency = 0
+    local function applyUITransparency(pct)
+        GlobalTransparency = pct
+        local tr = pct / 100
+        MainFrame.BackgroundTransparency = tr
+        for _, pf in ipairs(PanelFrames) do
+            pf.panel.BackgroundTransparency  = tr
+            pf.header.BackgroundTransparency = tr
+        end
+    end
+
     local function makePanel(titleText)
         local f = Instance.new("Frame")
         f.BackgroundColor3 = Theme.Panel
@@ -1868,6 +1880,8 @@ function _Catalyst:Window(opt)
         header.BorderSizePixel = 0
         header.Active = true
         header.Parent = f
+
+        PanelFrames[#PanelFrames + 1] = { panel = f, header = header }
 
         local accentLine = Instance.new("Frame")
         accentLine.Size = UDim2.new(1, -16, 0, 2)
@@ -1913,6 +1927,13 @@ function _Catalyst:Window(opt)
     local tabsPanel     = makePanel("MENU")
     local contentPanel  = makePanel(Title)
     local settingsPanel = makePanel("SETTINGS")
+
+    onTheme(function()
+        MainFrame.BackgroundColor3 = Theme.Window
+        if GlobalTransparency and GlobalTransparency > 0 then
+            applyUITransparency(GlobalTransparency)
+        end
+    end)
 
     local currentTabApi
     local searchBox
@@ -3254,16 +3275,16 @@ function _Catalyst:Window(opt)
     }
     _Catalyst.Flags["_font"] = "GothamMedium"
 
-    sApi:Slider("UI Transparency", "Opacity of the main window background", 0, 80, 0, function(v)
-        MainFrame.BackgroundTransparency = v / 100
+    sApi:Slider("UI Transparency", "Opacity of the main window and panels", 0, 85, 0, function(v)
+        applyUITransparency(v)
         _Catalyst.Flags["_uitransparency"] = v
     end, "_uitransparency", { Suffix = " %" })
 
     _Catalyst.Config["_uitransparency"] = {
-        Get     = function() return math.floor(MainFrame.BackgroundTransparency * 100 + 0.5) end,
+        Get     = function() return GlobalTransparency end,
         Set     = function(v)
             local n = tonumber(v)
-            if n then MainFrame.BackgroundTransparency = math.clamp(n, 0, 80) / 100 end
+            if n then applyUITransparency(math.clamp(math.floor(n), 0, 85)) end
         end,
         Default = 0,
     }
@@ -3297,18 +3318,18 @@ function _Catalyst:Window(opt)
     -- This directly mutates Theme keys and repaints descendants — same technique as applyTheme
     -- but without touching Accent (that stays controlled by the accent picker above).
     local function liveApplyDraft()
-        -- Build a color-swap map from old → new for every aspect key
         local map = {}
         for _, k in ipairs(THEME_ASPECTS) do
             if Theme[k] ~= draft[k] then
                 map[Theme[k]] = draft[k]
             end
         end
-        -- Update the live Theme table
         for _, k in ipairs(THEME_ASPECTS) do Theme[k] = draft[k] end
 
+        MainFrame.BackgroundColor3 = Theme.Window
+
         local function conv(c)
-            return map[c]  -- nil if no change needed
+            return map[c]
         end
 
         for _, obj in ipairs(ScreenGui:GetDescendants()) do
@@ -3341,7 +3362,6 @@ function _Catalyst:Window(opt)
                 end
             end
         end
-        -- Fire theme listeners so toggles/sliders etc. re-sync their state colors
         for _, fn in ipairs(ThemeListeners) do pcall(fn, Theme) end
     end
 
