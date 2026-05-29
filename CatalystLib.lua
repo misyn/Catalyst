@@ -81,23 +81,17 @@ local Themes = {
 }
 _Catalyst.Themes = Themes
 
--- ── GLOBAL FONT ──────────────────────────────────────────────────────────────
--- We keep a single "bold font" companion so bold labels stay bold in their family.
 local GlobalFont     = Enum.Font.GothamMedium
 local GlobalFontBold = Enum.Font.GothamBold  -- updated together
 
--- Bold-friend lookup: given a font name return the bold variant if it exists.
 local function boldVariant(fe)
     local name = fe.Name
-    -- already bold
     if name:find("Bold") then return fe end
     local try = name .. "Bold"
     local ok, b = pcall(function() return Enum.Font[try] end)
     return (ok and b) and b or fe
 end
 
--- Fonts that should stay structurally bold (panel headers, section titles etc.)
--- We tag them with a special attribute so the sweep can find them.
 local BOLD_TAG  = "_CatalystBold"
 local TKEY_TAG  = "_CatalystThemeKey"
 local TXTK_TAG  = "_CatalystTextKey"
@@ -155,8 +149,6 @@ local function applyThemeToObjects()
     end
 end
 
--- ── GLOBAL PADDING ────────────────────────────────────────────────────────────
--- We track every UIListLayout that separates cards so we can adjust spacing.
 local GlobalPadding    = 6   -- card gap / layout padding in px (2–16)
 local LayoutRefs       = {}  -- { layout = UIListLayout } entries
 
@@ -347,15 +339,11 @@ ScreenGui.IgnoreGuiInset = true
 pcall(function() ScreenGui.Parent = getGuiParent() end)
 if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 
--- ── GLOBAL FONT APPLY ─────────────────────────────────────────────────────────
--- Sweeps every text-bearing descendant of ScreenGui and applies the chosen font.
--- Bold-tagged objects get the bold variant; plain objects get the base font.
 local function applyGlobalFont(fontEnum)
     GlobalFont     = fontEnum
     GlobalFontBold = boldVariant(fontEnum)
     for _, obj in ipairs(ScreenGui:GetDescendants()) do
         if obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
-            -- skip tiny structural labels that should stay monospace (e.g. "::", ">", "v")
             local skip = (obj.Text == "::" or obj.Text == ">" or obj.Text == "v"
                        or obj.Text == "..." or obj.Text == "X")
             if not skip then
@@ -480,7 +468,6 @@ local function makeAPI(scroll)
         return f
     end
 
-    -- Helper: make a title label and tag it for bold font changes
     local function makeTitle(card, text, yOff, widthOffset)
         local t = Instance.new("TextLabel")
         t.BackgroundTransparency = 1
@@ -2632,7 +2619,6 @@ function _Catalyst:Window(opt)
         end
     end)
 
-    -- ── KEYBIND FRAME ─────────────────────────────────────────────────────────
     kbFrame = Instance.new("Frame")
     kbFrame.Name = "_CatalystKeybinds"
     kbFrame.AnchorPoint = Vector2.new(0, 0.5)
@@ -2825,7 +2811,6 @@ function _Catalyst:Window(opt)
         kbListEnabled = v and true or false; kbRefresh()
     end
 
-    -- ── TAB ───────────────────────────────────────────────────────────────────
     local firstTab = true
     function Window:Tab(name, icon)
         local container = Instance.new("ScrollingFrame")
@@ -2916,7 +2901,6 @@ function _Catalyst:Window(opt)
         return capi
     end
 
-    -- ── NOTIFICATIONS ─────────────────────────────────────────────────────────
     local notifEnabled  = true
     local notifScale    = 0.85
     local notifPosition = "Bottom Right"
@@ -3043,7 +3027,6 @@ function _Catalyst:Window(opt)
         end)
     end
 
-    -- ── CONFIG HELPERS ────────────────────────────────────────────────────────
     local function readMeta()
         local raw = FileSystem.read(ConfigFolder .. "/_meta.json")
         if raw then
@@ -3067,7 +3050,6 @@ function _Catalyst:Window(opt)
         return out
     end
 
-    -- ── CUSTOM THEME PERSISTENCE ──────────────────────────────────────────────
     local THEMES_FILE = ConfigFolder .. "/_themes.json"
     local function loadCustomThemes()
         local raw = FileSystem.read(THEMES_FILE)
@@ -3207,7 +3189,6 @@ function _Catalyst:Window(opt)
         applyAllVisuals()
     end
 
-    -- ── SETTINGS PANEL ────────────────────────────────────────────────────────
     local settingsScroll = Instance.new("ScrollingFrame")
     settingsScroll.Size = UDim2.new(1, 0, 1, 0); settingsScroll.BackgroundTransparency = 1
     settingsScroll.BorderSizePixel = 0; settingsScroll.ScrollBarThickness = 4
@@ -3221,7 +3202,6 @@ function _Catalyst:Window(opt)
     local themeDrop       -- the ui theme dropdown — refreshed when custom themes change
     local startAccent = _Catalyst._customAccent and Theme.Accent or (opt.Accent or Theme.Accent)
 
-    -- Helper: build the full ordered theme list for the dropdown
     local function buildThemeList()
         local list = { "GX", "Discord", "Light" }
         for name in pairs(Themes) do
@@ -3236,7 +3216,6 @@ function _Catalyst:Window(opt)
         return list
     end
 
-    -- ── INTERFACE SECTION ─────────────────────────────────────────────────────
     sApi:Section("Interface")
     sApi:Slider("UI Scale", "Resize the whole interface", 50, 150, 88, function(v)
         userScale = v / 100; applyScale()
@@ -3247,10 +3226,8 @@ function _Catalyst:Window(opt)
     end, "_streamermode")
     sApi:Bind("Toggle UI Key", ToggleKey, function() toggleUI() end, "_togglekey", { NoList = true })
 
-    -- ── APPEARANCE SECTION ────────────────────────────────────────────────────
     sApi:Section("Appearance")
 
-    -- UI Theme dropdown (refreshable)
     themeDrop = sApi:Dropdown("UI Theme", buildThemeList(), function(v)
         _Catalyst._customAccent = false; _Catalyst.Flags["_customaccent"] = false
         _Catalyst.__resolvedAccent = nil
@@ -3258,7 +3235,6 @@ function _Catalyst:Window(opt)
         if accentPicker and accentPicker.SetSilent then accentPicker.SetSilent(Theme.Accent) end
     end, "_theme", "GX")
 
-    -- Accent Color picker
     local draftAccentPicker
 
     accentPicker = sApi:Colorpicker("Accent Color", startAccent, function(c)
@@ -3272,7 +3248,6 @@ function _Catalyst:Window(opt)
     accentPickerRef = accentPicker
     _Catalyst.__accentSilent = accentPicker.SetSilent
 
-    -- ── TEXT FONT ─────────────────────────────────────────────────────────────
     sApi:Dropdown("Text Font", FONT_OPTIONS, function(v)
         local ok, fe = pcall(function() return Enum.Font[v] end)
         if ok and fe then
@@ -3306,18 +3281,13 @@ function _Catalyst:Window(opt)
     }
     _Catalyst.Flags["_padding"] = 6
 
-    -- ── CUSTOM THEME BUILDER ──────────────────────────────────────────────────
     sApi:Section("Custom Theme")
     sApi:Label("Build your own theme below. Changes preview live. Accent is set above per-theme.")
 
-    -- Draft colors start from current theme
     local draft = {}
     for _, k in ipairs(THEME_ASPECTS) do draft[k] = Theme[k] end
     local draftAccent = Theme.Accent
 
-    -- Live-apply the draft colors to the running UI so the user sees the result instantly.
-    -- This directly mutates Theme keys and repaints descendants — same technique as applyTheme
-    -- but without touching Accent (that stays controlled by the accent picker above).
     local function liveApplyDraft()
         for _, k in ipairs(THEME_ASPECTS) do Theme[k] = draft[k] end
         MainFrame.BackgroundColor3 = Theme.Window
@@ -3333,7 +3303,6 @@ function _Catalyst:Window(opt)
         end, nil, { NoRainbow = true })
         aspectPickers[aspect] = picker
     end
-    -- Accent draft picker — rainbow allowed here since it only affects accent
     draftAccentPicker = sApi:Colorpicker("Theme Accent", draftAccent, function(c)
         draftAccent = c
         setAccent(c)
@@ -3344,7 +3313,6 @@ function _Catalyst:Window(opt)
 
     local nameBox2 = sApi:Textbox("Theme Name", "Enter a name", false, function(t) end)
 
-    -- Helper: sync draft pickers to current theme values (called when a theme is selected)
     local function syncDraftFromTheme()
         for _, k in ipairs(THEME_ASPECTS) do
             draft[k] = Theme[k]
@@ -3354,8 +3322,6 @@ function _Catalyst:Window(opt)
         if draftAccentPicker then draftAccentPicker.SetSilent(Theme.Accent) end
     end
 
-    -- When a theme is applied from the dropdown, sync the draft editor to match
-    -- (but don't live-apply — applyTheme already did the repaint)
     onTheme(syncDraftFromTheme)
 
     local customThemeEditDrop   -- dropdown for selecting which custom theme to delete/update
@@ -3396,16 +3362,13 @@ function _Catalyst:Window(opt)
 
         customThemeEditDrop = sApi:Dropdown("Custom Themes", {}, function(v)
             selectedCustomTheme = v
-            -- Load that theme's colors into the draft and live-preview them
             if Themes[v] then
                 for _, k in ipairs(THEME_ASPECTS) do
                     draft[k] = Themes[v][k] or Theme[k]
                     if aspectPickers[k] then aspectPickers[k].SetSilent(draft[k]) end
                 end
-                liveApplyDraft()
                 draftAccent = Themes[v].Accent or Theme.Accent
                 if draftAccentPicker then draftAccentPicker.SetSilent(draftAccent) end
-                setAccent(draftAccent)
             end
         end)
 
@@ -3418,7 +3381,6 @@ function _Catalyst:Window(opt)
             for _, k in ipairs(THEME_ASPECTS) do t[k] = draft[k] end
             Themes[selectedCustomTheme] = t
             saveCustomThemes()
-            -- If this theme is currently active, re-apply it
             if _Catalyst.Flags["_theme"] == selectedCustomTheme then
                 applyTheme(selectedCustomTheme)
             end
@@ -3440,18 +3402,15 @@ function _Catalyst:Window(opt)
             themeDrop.Refresh(buildThemeList())
             refreshCustomThemeDropdown()
             selectedCustomTheme = ""
-            -- If deleted theme was active, fall back to GX
             if _Catalyst.Flags["_theme"] == selectedCustomTheme then
                 themeDrop.Set("GX")
             end
             Window:Notify("Theme", "Deleted theme.")
         end)
 
-        -- Initial populate
         refreshCustomThemeDropdown()
     end
 
-    -- ── Wire up Config entries for accent ─────────────────────────────────────
     _Catalyst.Config["_customaccent"] = {
         Get = function() return _Catalyst._customAccent and true or false end,
         Set = function(_) end,
@@ -3474,7 +3433,6 @@ function _Catalyst:Window(opt)
         if accentPicker and accentPicker.SetSilent then accentPicker.SetSilent(Theme.Accent) end
     end
 
-    -- ── REMAINING SETTINGS ────────────────────────────────────────────────────
     sApi:Section("Keybind List")
     sApi:Toggle("Show Keybind List", "Display active keybinds on screen", true, function(on)
         setKeybindListVisible(on)
@@ -3605,7 +3563,6 @@ function _Catalyst:Window(opt)
         end)
     end
 
-    -- ── INIT ──────────────────────────────────────────────────────────────────
     local didInit = false
     function Window:Init()
         if didInit then return end
@@ -3646,7 +3603,6 @@ function _Catalyst:Window(opt)
         if alive() and not didInit then Window:Init() end
     end)
 
-    -- Toggle key listener
     UserInputService.InputBegan:Connect(function(i, gpe)
         if not alive() then return end
         if gpe then return end
