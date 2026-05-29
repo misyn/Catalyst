@@ -2933,7 +2933,7 @@ function _Catalyst:Window(opt)
             nLayout.VerticalAlignment = Enum.VerticalAlignment.Top
         elseif notifPosition == "Top Left" then
             notifyHolder.AnchorPoint = Vector2.new(0, 0)
-            notifyHolder.Position = UDim2.new(0, 16, 0, 16)
+            notifyHolder.Position = UDim2.new(0, 16, 0, 80)
             nLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
             nLayout.VerticalAlignment = Enum.VerticalAlignment.Top
         else
@@ -3003,6 +3003,9 @@ function _Catalyst:Window(opt)
         barBG.BackgroundTransparency = 1
         barBG.BackgroundColor3 = color
         barBG.Parent = card
+        local barCorner = Instance.new("UICorner")
+        barCorner.CornerRadius = UDim.new(1, 0)
+        barCorner.Parent = barBG
 
         local barFill = Instance.new("Frame")
         barFill.Size = UDim2.new(1, 0, 1, 0)
