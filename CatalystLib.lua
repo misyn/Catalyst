@@ -174,7 +174,7 @@ local FONT_OPTIONS = {
 
 local THEME_ASPECTS = { "Window", "Panel", "Header", "Element", "Hover", "Stroke", "Text", "SubText" }
 
-local AccentObjects   = {}
+local AccentObjects  = {}
 local AccentListeners = {}
 local ThemeListeners  = {}
 
