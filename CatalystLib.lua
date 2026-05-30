@@ -3354,7 +3354,6 @@ function _Catalyst:Window(opt)
     _Catalyst.Flags["_padding"] = 6
 
     sApi:Section("Custom Theme")
-    sApi:Label("Build your own theme below. Changes preview live. Accent is set above per-theme.")
 
     local draft = {}
     for _, k in ipairs(THEME_ASPECTS) do draft[k] = Theme[k] end
@@ -3426,8 +3425,6 @@ function _Catalyst:Window(opt)
         refreshCustomThemeDropdown()
         Window:Notify("Theme", "Saved theme '" .. tname .. "'")
     end)
-
-    sApi:Label("Select a custom theme below to update or delete it.")
 
     do
         local selectedCustomTheme = ""
