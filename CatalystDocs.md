@@ -1,6 +1,6 @@
 # Catalyst — Documentation
 
-A three-panel Roblox UI library with dockable panels, a config system, and full mobile support.
+A three-panel Roblox UI library with dockable panels, a config system, and full mobile support. 
 
 > File: `CatalystLib.lua` — returns the `_Catalyst` source.
 > Example: `CatalystLib_Example.lua`.
